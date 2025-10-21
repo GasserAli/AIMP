@@ -27,7 +27,7 @@ class Geometry:
             "E": {
                 # Your example: E-S vehicle goes through C4, C3, C2, C1...
                 "S": {'conflicts': ['C4', 'C3', 'C2', 'C1'], 'merge': 'M_W'}, # ...and exits at M_W
-                "L": {'conflicts': ['C7', 'C9', 'C11', 'C14'], 'merge': 'M_S'},
+                "L": {'conflicts': ['C7', 'C9', 'C10', 'C14'], 'merge': 'M_S'},
                 "R": {'conflicts': [], 'merge': 'M_N'},
             },
             # South Approach
@@ -39,7 +39,7 @@ class Geometry:
             # West Approach
             "W": {
                 "S": {'conflicts': ['C13', 'C14', 'C15', 'C16'], 'merge': 'M_E'},
-                "L": {'conflicts': ['C10', 'C8', 'C6', 'C3'], 'merge': 'M_N'},
+                "L": {'conflicts': ['C11', 'C8', 'C6', 'C3'], 'merge': 'M_N'},
                 "R": {'conflicts': [], 'merge': 'M_S'},
             }
         }

@@ -5,6 +5,7 @@ import config
 
 # Import the Geometry class
 from geometry import Geometry
+from decoder import is_permutation_valid
 
 def main():
     """
@@ -27,6 +28,11 @@ def main():
     # A) Set the path for each vehicle
     for vehicle in all_vehicles:
         intersection_geom.set_trajectory(vehicle)
+
+    print(is_permutation_valid(all_vehicles,distance_to_first_conflict=10.0,inter_conflict_distance=10.0,safety_time=config.tau))
+
+    for vehicle in all_vehicles:
+        print(f"Vehicle {vehicle.vehicle_id} delay: {vehicle.delay}")
         
     # B) Create the entry queues
     intersection_geom.create_entry_queue(all_vehicles)

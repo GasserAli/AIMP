@@ -1,7 +1,7 @@
 # File: vehicle.py
 
 class Vehicle:
-    def __init__(self, vehicle_id, approach, maneuver, priority_status, velocity, delay):
+    def __init__(self, vehicle_id, approach, maneuver, priority_status, velocity, delay=0.0):
         """
         Initializes a Vehicle object.
         """

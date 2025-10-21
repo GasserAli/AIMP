@@ -1,14 +1,16 @@
 from dataclasses import dataclass
 from typing import List, Dict, Tuple
+from vehicle import Vehicle 
+import config 
+from geometry import Geometry
 
-
-@dataclass
-class Vehicle:
-    Vid: int
-    Approach: str  # 'N','S','E','W'
-    Maneuver: str  # 'S','L','R'
-    velocity: float  # m/s
-    path: List[str]  # list of conflict point ids (e.g., ['C1','C9','Mn'])
+# @dataclass
+# class Vehicle:
+#     vehicle_id: int
+#     Approach: str  # 'N','S','E','W'
+#     Maneuver: str  # 'S','L','R'
+#     velocity: float  # m/s
+#     path: List[str]  # list of conflict point ids (e.g., ['C1','C9','Mn'])
 
 
 from typing import Union
@@ -26,7 +28,7 @@ def is_permutation_valid(
 
     Parameters
     - permutation: list of Vehicle objects in the order they'll traverse the intersection
-    - distance_to_first_conflict: mapping from vehicle.Vid -> distance (meters) from
+    - distance_to_first_conflict: mapping from vehicle.vehicle_id -> distance (meters) from
       the vehicle's queue start to the first conflict point in its path
     - inter_conflict_distance: mapping from (conflict_i, conflict_j) -> distance (meters)
       between consecutive conflict points along the vehicle's path. If consecutive points
@@ -36,7 +38,7 @@ def is_permutation_valid(
     Assumptions
     - Each vehicle travels its path at the constant speed `velocity`.
     - path is ordered list of conflict point ids the vehicle will traverse in sequence.
-    - inter_conflict_distance provides distances for consecutive pairs present in any vehicle.path.
+    - inter_conflict_distance provehicle_ides distances for consecutive pairs present in any vehicle.path.
     """
     # Initialize conflict count
     count_conflicts = 0
@@ -45,7 +47,7 @@ def is_permutation_valid(
     # First: group vehicles by approach (queue order is the order they appear in permutation)
     approaches: Dict[str, List[Vehicle]] = {}
     for veh in permutation:
-        approaches.setdefault(veh.Approach, []).append(veh)
+        approaches.setdefault(veh.approach, []).append(veh)
     # print(approaches)
 
     # Enforce queue speed constraint: following vehicle must not be faster than the vehicle ahead
@@ -63,7 +65,7 @@ def is_permutation_valid(
     # We'll compute per-vehicle distance to first conflict. If distance_to_first_conflict is
     # a scalar it represents the distance for the front vehicle in each queue; subsequent
     # vehicles in the same queue are placed further back by `queue_spacing` meters each.
-    # If a dict is provided, its values are used directly for each vehicle (assumed consistent).
+    # If a dict is provehicle_ided, its values are used directly for each vehicle (assumed consistent).
 
     # Prepare per-vehicle d0 mapping when scalar is used
     per_vehicle_d0: Dict[int, float] = {}
@@ -72,7 +74,7 @@ def is_permutation_valid(
         # For each approach, assign d0 for vehicles in queue order (front -> back)
         for approach, vehs in approaches.items():
             for idx, veh in enumerate(vehs):
-                per_vehicle_d0[veh.Vid] = base_d0 + idx * float(queue_spacing)
+                per_vehicle_d0[veh.vehicle_id] = base_d0 + idx * float(queue_spacing)
 
     for veh in permutation:
         if len(veh.path) == 0:
@@ -80,26 +82,26 @@ def is_permutation_valid(
 
         # distance from queue start to first conflict
         if isinstance(distance_to_first_conflict, dict):
-            d0 = distance_to_first_conflict.get(veh.Vid, None)
+            d0 = distance_to_first_conflict.get(veh.vehicle_id, None)
             if d0 is None:
-                raise ValueError(f"distance_to_first_conflict missing for vehicle {veh.Vid}")
+                raise ValueError(f"distance_to_first_conflict missing for vehicle {veh.vehicle_id}")
         else:
-            d0 = per_vehicle_d0.get(veh.Vid, None)
+            d0 = per_vehicle_d0.get(veh.vehicle_id, None)
             if d0 is None:
                 # fallback: use base value
                 d0 = float(distance_to_first_conflict)
 
         # time to reach first conflict
         t = d0 / max(veh.velocity, 1e-3)
-        print(f"Vehicle {veh.Vid} arrives at first conflict {veh.path[0]} at time {t:.2f}s")
+        print(f"Vehicle {veh.vehicle_id} arrives at conflict {veh.path[0]} at time {t:.2f}s")
 
 
         # record arrival to first conflict
         first_conf = veh.path[0]
-        conflict_arrivals.setdefault(first_conf, []).append((veh.Vid, t))
+        conflict_arrivals.setdefault(first_conf, []).append((veh.vehicle_id, t))
 
         # walk through subsequent conflicts
-        for i in range(1,len(veh.path) - 1):
+        for i in range(len(veh.path) - 1):
             a = veh.path[i]
             b = veh.path[i + 1]
             # inter_conflict_distance can be a dict or a scalar (same distance between any pair)
@@ -116,13 +118,13 @@ def is_permutation_valid(
 
             dt = d / max(veh.velocity, 1e-3)
             t += dt
-            conflict_arrivals.setdefault(b, []).append((veh.Vid, t))
-            print(f"Vehicle {veh.Vid} arrives at conflict {a} at time {t:.2f}s")
+            conflict_arrivals.setdefault(b, []).append((veh.vehicle_id, t))
+            print(f"Vehicle {veh.vehicle_id} arrives at conflict {a} at time {t:.2f}s")
 
 
     # Now check each conflict point for temporal collisions
     for cp, arrivals in conflict_arrivals.items():
-        print(arrivals)
+        # print(arrivals)
         # sort arrivals by time
         arrivals.sort(key=lambda x: x[1])
         for i in range(len(arrivals) - 1):
@@ -130,26 +132,29 @@ def is_permutation_valid(
             t_next = arrivals[i + 1][1]
             if t_next - t_curr < safety_time:
                 count_conflicts += 1
-                permutation[i+1].set_delay(t_next-t_curr)
-                print(f"Conflict point {cp} has vehicles {arrivals[i][0]} and {arrivals[i+1][0]} too close: {t_next - t_curr:.2f}s apart")
+                v_id = arrivals[i+1][0]
+                for vehicle in permutation:
+                    if vehicle.vehicle_id == v_id:
+                        vehicle.set_delay(t_next-t_curr+safety_time)
+                
                 # conflict detected
                 
 
     return (count_conflicts == 0, count_conflicts)
 
 
-if __name__ == '__main__':
-    # Simple unit test
-    velocity = 10
-    v1 = Vehicle(1, 'E', 'L', velocity=velocity, path=['C7', 'C9','C10','C14', 'Ms'])
-    v2 = Vehicle(2, 'E', 'S', velocity=velocity, path=['C4', 'C3','C2', 'C1','Mw'])
-    v3 = Vehicle(3, 'N', 'L', velocity=velocity, path=['C2', 'C6','C7', 'C12','Me'])
-    v4 = Vehicle(4, 'N', 'L', velocity=velocity, path=['C2', 'C6','C7', 'C12','Me'])
+# if __name__ == '__main__':
+#     # Simple unit test
+#     velocity = 10
+#     v1 = Vehicle(1, 'E', 'L', velocity=velocity, path=['C7', 'C9','C10','C14', 'Ms'])
+#     v2 = Vehicle(2, 'E', 'S', velocity=velocity, path=['C4', 'C3','C2', 'C1','Mw'])
+#     v3 = Vehicle(3, 'N', 'L', velocity=velocity, path=['C2', 'C6','C7', 'C12','Me'])
+#     v4 = Vehicle(4, 'N', 'L', velocity=velocity, path=['C2', 'C6','C7', 'C12','Me'])
 
 
-    perm = [v1, v2, v3, v4]
-    # Use scalar distances (same for all vehicles and conflict hops)
-    d0 = 10.0  # meters to first conflict for all vehicles
-    inter = 10.0  # meters between consecutive conflict points for all hops
+#     perm = [v1, v2, v3, v4]
+#     # Use scalar distances (same for all vehicles and conflict hops)
+#     d0 = 10.0  # meters to first conflict for all vehicles
+#     inter = 10.0  # meters between consecutive conflict points for all hops
 
-    print('Permutation valid?', is_permutation_valid(perm, d0, inter, safety_time=3))
+#     print('Permutation valid?', is_permutation_valid(perm, d0, inter, safety_time=3))
