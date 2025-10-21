@@ -21,3 +21,9 @@ class Vehicle:
         return (f"ID: {self.vehicle_id}, Approach: {self.approach}, "
                 f"Maneuver: {self.maneuver}, Priority: {self.priority_status}, "
                 f"Vel_Range: {self.velocity}")
+    
+    def set_delay(self, delay):
+        """
+        Sets the delay for the vehicle.
+        """
+        self.delay = delay
