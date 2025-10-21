@@ -6,6 +6,7 @@ import config
 # Import the Geometry class
 from geometry import Geometry
 from decoder import is_permutation_valid
+from objective import objective_from_queues
 
 def main():
     """
@@ -51,6 +52,13 @@ def main():
         print(f"  {approach} Queue: {v_ids}")
 
     print("\n---Test Complete ---")
+
+    result = objective_from_queues(all_vehicles, alpha=config.alpha, beta=config.beta)
+    print("\nObjective Results:")
+    print(f"  Delays: {result['delays']}")  
+    print(f"  Emergency Delay (fem): {result['fem']}")
+    print(f"  Total Delay (fall): {result['fall']}")
+    print(f"  Weighted Objective (f): {result['f']}")
 
 
 # This standard Python line calls the main() function when you run the script

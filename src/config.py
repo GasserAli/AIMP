@@ -14,7 +14,7 @@ safety_distance = 2.0    # Safety distance between vehicles (in meters)
 # This list can also be imported by other files.
 pi = [
     Vehicle(vehicle_id=1, approach="E", maneuver="L", priority_status=False, velocity=velocity_range),
-    Vehicle(vehicle_id=2, approach="E", maneuver="S", priority_status=False, velocity=velocity_range),
+    Vehicle(vehicle_id=2, approach="E", maneuver="S", priority_status=True, velocity=velocity_range),
     Vehicle(vehicle_id=3, approach="N", maneuver="L", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=4, approach="W", maneuver="S", priority_status=True, velocity=velocity_range),
 ]
