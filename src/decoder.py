@@ -43,11 +43,15 @@ def is_permutation_valid(
     # Initialize conflict count
     count_conflicts = 0
     
+    #dict mapping vehicle ids to vehicles
+    vehicles = {}
 
     # First: group vehicles by approach (queue order is the order they appear in permutation)
     approaches: Dict[str, List[Vehicle]] = {}
     for veh in permutation:
+        vehicles[veh.vehicle_id] = veh
         approaches.setdefault(veh.approach, []).append(veh)
+
     # print(approaches)
 
     # Enforce queue speed constraint: following vehicle must not be faster than the vehicle ahead
@@ -131,12 +135,27 @@ def is_permutation_valid(
             t_curr = arrivals[i][1]
             t_next = arrivals[i + 1][1]
             if t_next - t_curr < safety_time:
+                print(f"collision detected at {cp} between vehicles {arrivals[i + 1]} and {arrivals[i]}")
+                print(f'previous conflict arrival times \n {conflict_arrivals}')
                 count_conflicts += 1
                 v_id = arrivals[i+1][0]
-                for vehicle in permutation:
-                    if vehicle.vehicle_id == v_id:
-                        vehicle.set_delay(t_next-t_curr+safety_time)
-                
+                # for vehicle in permutation:
+                #     if vehicle.vehicle_id == v_id:
+                #         vehicle.set_delay(t_next-t_curr+safety_time)
+                vehicles[v_id].set_delay(t_next - t_curr + safety_time)
+                flag = True
+                for path in vehicles[v_id].path:
+                    if path == cp:
+                        flag = True
+                    if flag:
+                        times = conflict_arrivals[path]
+                        for vid, time in times:
+                            if vid == v_id:
+                                conflict_arrivals[path].remove((vid, time))
+                                conflict_arrivals[path].append((vid, time + vehicles[v_id].delay))
+                        
+
+            print(f'updated conflict arrival times: \n {conflict_arrivals}')
                 # conflict detected
                 
 
