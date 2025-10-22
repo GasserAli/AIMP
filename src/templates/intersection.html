@@ -179,8 +179,8 @@
 
             const mergeOffset = config.laneWidth * 0.2 - 20;
             const mergePoints = [
-                {x: center.x + config.laneWidth/2, y: center.y - config.roadWidth/2 + mergeOffset, label: "Mn", type: 'merge'},
-                {x: center.x - config.laneWidth/2, y: center.y + config.roadWidth/2 - mergeOffset, label: "Ms", type: 'merge'},
+                {x: center.x - config.laneWidth/2, y: center.y + config.roadWidth/2 - mergeOffset, label: "Mn", type: 'merge'},
+                {x: center.x + config.laneWidth/2, y: center.y - config.roadWidth/2 + mergeOffset, label: "Ms", type: 'merge'},
                 {x: center.x + config.roadWidth/2 - mergeOffset, y: center.y + config.laneWidth/2, label: "Me", type: 'merge'},
                 {x: center.x - config.roadWidth/2 + mergeOffset, y: center.y - config.laneWidth/2, label: "Mw", type: 'merge'}
             ];
@@ -332,115 +332,206 @@
             } else {
                 sel.datum(vehicle);
             }
+            // Build an array of actual coordinates for the full path (include start pos)
+            const circle = sel.select('circle');
+            const startCx = +circle.attr('cx');
+            const startCy = +circle.attr('cy');
+            const points = [{ x: startCx, y: startCy }];
+            (vehicle.path || []).forEach(lbl => {
+                const p = window.conflictPointsMap && window.conflictPointsMap[lbl];
+                if (p) points.push({ x: p.x, y: p.y });
+            });
 
-            let i = 0;
-            function step() {
-                if (i >= vehicle.path.length) {
-                    removeVehicleFromDOM(vehicle.id);
-                    if (onFinish) onFinish();
-                    return;
-                }
-                const targetLabel = vehicle.path[i];
-                const target = window.conflictPointsMap && window.conflictPointsMap[targetLabel];
-                i++;
-                if (!target) { step(); return; }
-
-                const circle = sel.select('circle');
-                const cx = +circle.attr('cx');
-                const cy = +circle.attr('cy');
-                const duration = 800;
-
-                sel.transition()
-                    .duration(duration)
-                    .attrTween('transform', function() {
-                        const dx = target.x - cx;
-                        const dy = target.y - cy;
-                        return function(t) {
-                            const nx = cx + dx * t;
-                            const ny = cy + dy * t;
-                            return `translate(${nx - cx}, ${ny - cy})`;
-                        };
-                    })
-                    .on('end', function() {
-                        circle.attr('cx', target.x).attr('cy', target.y);
-                        sel.select('text').attr('x', target.x).attr('y', target.y);
-                        sel.attr('transform', null);
-                        step();
-                    });
+            // If there are no valid path points, finish immediately
+            if (points.length <= 1) {
+                removeVehicleFromDOM(vehicle.id);
+                if (onFinish) onFinish();
+                return;
             }
-            step();
+
+            // Compute segment lengths and total length
+            const segLengths = [];
+            let totalLength = 0;
+            for (let i = 0; i < points.length - 1; i++) {
+                const dx = points[i+1].x - points[i].x;
+                const dy = points[i+1].y - points[i].y;
+                const L = Math.sqrt(dx*dx + dy*dy);
+                segLengths.push(L);
+                totalLength += L;
+            }
+
+            // Determine vehicle speed and total duration
+            const speed = (vehicle.speed || vehicle.velocity || 10); // units: pixel/second (approx)
+            const visualScale = 0.9; // tweak: lower means faster animation
+            const minDuration = 200; // ms
+            let totalDuration = Math.max(minDuration, Math.round((totalLength / (speed || 1)) * 1000 * visualScale));
+
+            // Continuous transition along the polyline
+            sel.transition()
+                .duration(totalDuration)
+                .ease(d3.easeLinear)
+                .attrTween('transform', function() {
+                    // capture points and segLengths
+                    return function(t) {
+                        const dist = t * totalLength;
+                        // find segment for this distance
+                        let acc = 0;
+                        let seg = 0;
+                        while (seg < segLengths.length && acc + segLengths[seg] < dist) {
+                            acc += segLengths[seg];
+                            seg++;
+                        }
+                        if (seg >= segLengths.length) {
+                            // at end
+                            const last = points[points.length-1];
+                            return `translate(${last.x - startCx}, ${last.y - startCy})`;
+                        }
+                        const segT = (dist - acc) / (segLengths[seg] || 1);
+                        const x = points[seg].x + (points[seg+1].x - points[seg].x) * segT;
+                        const y = points[seg].y + (points[seg+1].y - points[seg].y) * segT;
+                        return `translate(${x - startCx}, ${y - startCy})`;
+                    };
+                })
+                .on('end', function() {
+                    // snap to final intersection point
+                    const last = points[points.length-1];
+                    circle.attr('cx', last.x).attr('cy', last.y);
+                    sel.select('text').attr('x', last.x).attr('y', last.y);
+                    sel.attr('transform', null);
+
+                        // Compute an exit point aligned with the lane direction (horizontal or vertical)
+                        // Use the last segment vector to determine dominant direction.
+                        const prev = points[points.length - 2] || points[0];
+                        const segDx = last.x - prev.x;
+                        const segDy = last.y - prev.y;
+                        const horizontal = Math.abs(segDx) >= Math.abs(segDy);
+
+                        // candidate lane centers
+                        const laneCenterYs = [center.y - config.laneWidth/2, center.y + config.laneWidth/2];
+                        const laneCenterXs = [center.x - config.laneWidth/2, center.x + config.laneWidth/2];
+
+                        let exitX, exitY;
+                        const extra = config.queueOffset + 120; // distance beyond intersection bounds
+
+                        if (horizontal) {
+                            // moving mostly left/right: choose exit X beyond canvas, align Y to nearest lane center
+                            const dir = segDx >= 0 ? 1 : -1;
+                            exitX = dir > 0 ? (config.width + config.padding + extra) : (-config.padding - extra);
+                            // snap Y to nearest lane center
+                            exitY = laneCenterYs.reduce((a, b) => Math.abs(b - last.y) < Math.abs(a - last.y) ? b : a);
+                        } else {
+                            // moving mostly up/down: choose exit Y beyond canvas, align X to nearest lane center
+                            const dir = segDy >= 0 ? 1 : -1;
+                            exitY = dir > 0 ? (config.height + config.padding + extra) : (-config.padding - extra);
+                            exitX = laneCenterXs.reduce((a, b) => Math.abs(b - last.x) < Math.abs(a - last.x) ? b : a);
+                        }
+
+                        // Determine speed again for exit animation and apply a multiplier so exits are faster
+                        const speed = (vehicle.speed || vehicle.velocity || 30);
+                        const visualScale = 0.9;
+                        const exitDist = Math.sqrt((exitX - last.x) * (exitX - last.x) + (exitY - last.y) * (exitY - last.y));
+                        const exitSpeedMultiplier = 3.0; // make exiting vehicles faster
+                        const exitSpeed = Math.max(0.1, speed * exitSpeedMultiplier);
+                        // compute duration based on faster exit speed; allow a smaller min duration for snappier exits
+                        const exitDuration = Math.max(100, Math.round((exitDist / exitSpeed) * 1000 * visualScale));
+
+                        // Animate the vehicle off-screen along the lane alignment, then remove
+                        sel.transition()
+                            .duration(exitDuration)
+                            .ease(d3.easeLinear)
+                            .attrTween('transform', function() {
+                                const sx = last.x, sy = last.y;
+                                const dx = exitX - sx, dy = exitY - sy;
+                                return function(t) {
+                                    const nx = sx + dx * t;
+                                    const ny = sy + dy * t;
+                                    return `translate(${nx - sx}, ${ny - sy})`;
+                                };
+                            })
+                            .on('end', function() {
+                                // final snap and removal
+                                removeVehicleFromDOM(vehicle.id);
+                                if (onFinish) onFinish();
+                            });
+                });
         }
 
-        function startPermutationAnimation(permutation, vehicles) {
+        // Start animation for the given permutation.
+        // This version launches all vehicle animations concurrently (optionally staggered).
+        // Call: startPermutationAnimation(permutation, vehicles, staggerMs)
+        // If staggerMs > 0, each vehicle start is delayed by i*staggerMs to create a small offset.
+        function startPermutationAnimation(permutation, vehicles, staggerMs) {
             window.isAnimating = true;
             const vehicleMap = {};
             (vehicles || []).forEach(v => { vehicleMap[v.id] = v; });
 
-            let idx = 0;
-            function next() {
-                if (idx >= permutation.length) {
-                    window.isAnimating = false;
-                    return;
-                }
-                const vid = permutation[idx];
+            staggerMs = typeof staggerMs === 'number' ? staggerMs : 0;
+            let active = 0;
+
+            permutation.forEach((vid, i) => {
                 const vehicle = vehicleMap[vid];
-                if (!vehicle) {
-                    idx++;
-                    next();
-                    return;
-                }
-                animateVehicleAlongPath(vehicle, function() {
-                    idx++;
-                    setTimeout(next, 200);
-                });
-            }
-            next();
+                if (!vehicle) return; // skip missing vehicles
+
+                const delay = staggerMs > 0 ? i * staggerMs : 0;
+                setTimeout(() => {
+                    active++;
+                    animateVehicleAlongPath(vehicle, function() {
+                        active--;
+                        // when all animations complete, clear flag
+                        if (active === 0) window.isAnimating = false;
+                    });
+                }, delay);
+            });
+
+            // if there were no vehicles, clear the flag immediately
+            if (permutation.length === 0) window.isAnimating = false;
         }
 
         // Mock poll data for testing (replace with your /api/get_state endpoint)
-        function pollUpdates() {
-            fetch('/api/get_state') 
-            .then(response => response.json()) 
-            .then(data => { // store latest state 
-            window.latestState = data || {}; 
-            if (data.vehicles && data.vehicles.length > 0) {
-                console.log(data.vehicles)
-                updateVehicles(data.vehicles);
-            }
-            data.running = true
-            // const data = {
-            //     running: true,
-            //     permutation: ['A', 'B'],
-            //     vehicles: [
-            //         {id: 'A', approach: 'E', path: ['C4','C3','C2', 'Mn'], priority_status: false},
-            //         // {id: 'B', approach: 'E', path: ['C2','C6','C9','Mw'], priority_status: true}
-            //     ]
-            // };
-            // updateVehicles(data.vehicles);
-            if (data.running && !window.isAnimating) {
-                const permutation = data.permutation || data.vehicles.map(v => v.id);
-                startPermutationAnimation(permutation, data.vehicles);
-            }
-        }).catch(error => {
-            console.error('Error fetching state:', error);
-        });  
-            setTimeout(pollUpdates, 12000); // Poll every 2 seconds
-        }
-
-                // Mock poll data for testing (replace with your /api/get_state endpoint)
         // function pollUpdates() {
-        //     const data = {
-        //         running: true,
-        //         permutation: ['A', 'B'],
-        //         vehicles: [
-        //             {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false},
-        //             {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true}
-        //         ]
-        //     };
-        //     updateVehicles(data.vehicles);
-        //     if (data.running && !window.isAnimating)
-        //         startPermutationAnimation(data.permutation, data.vehicles);
+        //     fetch('/api/get_state') 
+        //     .then(response => response.json()) 
+        //     .then(data => { // store latest state 
+        //     window.latestState = data || {}; 
+        //     if (data.vehicles && data.vehicles.length > 0) {
+        //         console.log(data.vehicles)
+        //         updateVehicles(data.vehicles);
+        //     }
+        //     data.running = true
+        //     // const data = {
+        //     //     running: true,
+        //     //     permutation: ['A', 'B'],
+        //     //     vehicles: [
+        //     //         {id: 'A', approach: 'E', path: ['C4','C3','C2', 'Mn'], priority_status: false},
+        //     //         // {id: 'B', approach: 'E', path: ['C2','C6','C9','Mw'], priority_status: true}
+        //     //     ]
+        //     // };
+        //     // updateVehicles(data.vehicles);
+        //     if (data.running && !window.isAnimating) {
+        //         const permutation = data.permutation || data.vehicles.map(v => v.id);
+        //         startPermutationAnimation(permutation, data.vehicles);
+        //     }
+        // }).catch(error => {
+        //     console.error('Error fetching state:', error);
+        // });  
+        //     setTimeout(pollUpdates, 12000); // Poll every 2 seconds
         // }
+
+         //       Mock poll data for testing (replace with your /api/get_state endpoint)
+        function pollUpdates() {
+            const data = {
+                running: true,
+                permutation: ['A', 'B'],
+                vehicles: [
+                    {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false,velocity:80},
+                    {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true,velocity:50}
+                ]
+            };
+            updateVehicles(data.vehicles);
+            if (data.running && !window.isAnimating)
+                // start all vehicle animations simultaneously with a small stagger for natural motion
+                startPermutationAnimation(data.permutation, data.vehicles, 200);
+        }
 
         function init() {
             drawRoads();
