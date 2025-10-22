@@ -5,7 +5,7 @@ class Vehicle:
         """
         Initializes a Vehicle object.
         """
-        self.vehicle_id = vehicle_id
+        self.id = vehicle_id
         self.approach = approach      # "N", "E", "S", or "W"
         self.maneuver = maneuver      # "S", "L", or "R"
         self.priority_status = priority_status

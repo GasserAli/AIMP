@@ -1,67 +1,63 @@
-import numpy
-from vehicle import Vehicle 
+# File: objective.py
+import config
 
-# class Vehicle:
-#     def __init__(self, vid, path, times, tear, is_emergency=False):
-#         """
-#         Parameters
-#         ----------
-#         vid : int
-#             Vehicle ID.
-#         path : list[str]
-#             List of conflict points (e.g. ['C1','C5','MN']).
-#         times : dict[str, float]
-#             Time when the vehicle passes each conflict point.
-#         tear : float
-#             Earliest arrival time at first conflict point.
-#         is_emergency : bool
-#             True if this vehicle is an emergency vehicle.
-#         """
-#         self.id = vid
-#         self.path = path
-#         self.times = times
-#         self.tear = tear
-#         self.is_emergency = is_emergency
-
-#     def exit_time(self, tau):
-#         """Compute exit time (last conflict point time + headway)."""
-#         last_p = self.path[-1]
-#         return self.times[last_p] + tau[last_p]
-
-#     def free_time(self, tau):
-#         """Compute free-flow exit time (if there were no delays)."""
-#         return self.tear + sum(tau[p] for p in self.path)
-
-#     def delay(self, tau):
-#         """Delay = actual exit - free-flow exit."""
-#         return max(0.0, self.exit_time(tau) - self.free_time(tau))
-
-
-def objective_from_queues(permutation, alpha=1.0, beta=1.0):
+def calculate_objective(decoder_results):
     """
-    Compute the total and weighted delay for 4 queues of Vehicle objects.
+    Computes the weighted objective from a simple list of delay results.
+    This function implements the objective function from your report.
 
     Parameters
     ----------
-    queues : dict[str, list[Vehicle]]
-        Dictionary with keys ['N','E','S','W'] each containing a list of Vehicle objects.
-    tau : dict[str, float]
-        Headway times for each conflict point.
-    alpha, beta : float
-        Weights for emergency and total delays.
-
+    decoder_results : list[dict]
+        A list of dictionaries. This is the *OUTPUT* of the Decoder.
+        Each dictionary must be:
+        {"id": int, "delay": float, "is_emergency": bool}
+    
     Returns
     -------
     dict : {"delays", "fem", "fall", "f"}
+        A dictionary containing the final calculated objective values.
     """
+    # Get weights directly from the config file
+    alpha = config.alpha
+    beta = config.beta
 
-    all_vehicles = [v for v in permutation]
-    delays = {v.vehicle_id: v.delay for v in all_vehicles}
+    # Create a dictionary of {vehicle_id: delay}
+    delays = {r["id"]: r["delay"] for r in decoder_results}
 
-    fem = sum(v.delay for v in all_vehicles if v.priority_status)
+    # fem = sum of delays for emergency vehicles
+    fem = sum(r["delay"] for r in decoder_results if r["is_emergency"])
+    
+    # fall = sum of delays for all vehicles
     fall = sum(delays.values())
+    
+    # f = weighted objective function
     f = alpha * fem + beta * fall
 
     return {"delays": delays, "fem": fem, "fall": fall, "f": f}
 
 
+# --- Test Block ---
+if __name__ == "__main__":
+    
+    print("--- Testing Decoupled Objective Function ---")
+
+    # This is a MOCK (simulated) output from a Decoder.
+    mock_decoder_output = [
+        {"id": 1, "delay": 0.0, "is_emergency": True},
+        {"id": 2, "delay": 1.0, "is_emergency": False},
+        {"id": 3, "delay": 1.0, "is_emergency": False}
+    ]
+
+    print(f"Simulated Decoder output: {mock_decoder_output}")
+
+    # Run the objective function
+    result = calculate_objective(mock_decoder_output)
+
+    # Print the final results
+    print("\n=== Objective Function Test Results ===")
+    print("Delays:", result["delays"])
+    print("Emergency delay (fem):", result["fem"])
+    print("Total delay (fall):", result["fall"])
+    print(f"Weighted objective (f):", result["f"])
+    print(f"(Based on config: alpha={config.alpha}, beta={config.beta})")
