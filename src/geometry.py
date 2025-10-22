@@ -19,7 +19,7 @@ class Geometry:
         self.path_map = {
             # North Approach
             "N": {
-                "S": {'conflicts': ['C1', 'C5', 'C10', 'C13'], 'merge': 'M_S'},
+                "S": {'conflicts': ['C1', 'C5', 'C11', 'C13'], 'merge': 'M_S'},
                 "L": {'conflicts': ['C2', 'C6', 'C9', 'C12'], 'merge': 'M_E'},
                 "R": {'conflicts': [], 'merge': 'M_W'},
             },
@@ -33,7 +33,7 @@ class Geometry:
             # South Approach
             "S": {
                 "S": {'conflicts': ['C16', 'C12', 'C7', 'C4'], 'merge': 'M_N'},
-                "L": {'conflicts': ['C15', 'C11', 'C8', 'C5'], 'merge': 'M_W'},
+                "L": {'conflicts': ['C15', 'C10', 'C8', 'C5'], 'merge': 'M_W'},
                 "R": {'conflicts': [], 'merge': 'M_E'},
             },
             # West Approach
