@@ -4,8 +4,8 @@ from vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 # --- Tunable Parameters ---
 # These variables can be imported by any other file.
 
-velocity_range = (10,10)  # Minimum and maximum velocity for all vehicles
-tau = 5.0                # Headway time (in seconds)
+velocity_range = (10,12)  # Minimum and maximum velocity for all vehicles
+tau = 4.0                # Headway time (in seconds)
 alpha = 1.0
 beta = 1.0
 safety_distance = 10.0    # Safety distance between vehicles (in meters)
@@ -16,7 +16,7 @@ pi = [
     Vehicle(vehicle_id=1, approach="W", maneuver="S", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=2, approach="S", maneuver="S", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=3, approach="N", maneuver="S", priority_status=False, velocity=velocity_range),
-    Vehicle(vehicle_id=4, approach="E", maneuver="S", priority_status=True, velocity=velocity_range),
+    Vehicle(vehicle_id=4, approach="E", maneuver="S", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=5, approach="E", maneuver="S", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=6, approach="E", maneuver="R", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=7, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),
