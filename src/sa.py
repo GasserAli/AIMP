@@ -9,8 +9,7 @@ import os
 import config
 import objective
 from geometry import Geometry
-from decoder import run_decoder
-from visualization_utils import IntersectionVisualizer  # <-- Imports the "Algorithm 1" decoder
+from decoder import run_decoder  # <-- Imports the "Algorithm 1" decoder
 
 # --- SA Parameters ---
 T_INITIAL = 1000.0        # Initial temperature
@@ -305,16 +304,10 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     print(f"Best Speeds: {[round(s, 2) for s in speeds_best]}")
     
     # Call the plotting function
-    # plot_results(history)
+    plot_results(history)
     
     return perm_best, speeds_best, obj_best
 
 
 if __name__ == "__main__":
-    perm_best, speeds_best, _ = run_sa()
-    visualizer = IntersectionVisualizer()
-    visualizer.start()  # Start the visualization server
-
-    # Test the visualization with a single update of the vehicles
-    visualizer.update_vehicles(vehicles=perm_best, permutation=[v.id for v in perm_best])
-    visualizer.start_simulation()
+    run_sa()

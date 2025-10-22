@@ -48,14 +48,14 @@
         .vehicle {
             fill: #4CAF50;
             stroke: white;
-            stroke-width: 1;
+            stroke-width: 2;
         }
         .vehicle-label {
             fill: white;
             text-anchor: middle;
             dominant-baseline: middle;
             font-weight: bold;
-            font-size: 8px;
+            font-size: 12px;
             pointer-events: none;
         }
         .vehicle.emergency { fill: #f44336; }
@@ -179,10 +179,10 @@
 
             const mergeOffset = config.laneWidth * 0.2 - 20;
             const mergePoints = [
-                {x: center.x + config.laneWidth/2, y: center.y - config.roadWidth/2 + mergeOffset, label: "M_N", type: 'merge'},
-                {x: center.x - config.laneWidth/2, y: center.y + config.roadWidth/2 - mergeOffset, label: "M_S", type: 'merge'},
-                {x: center.x + config.roadWidth/2 - mergeOffset, y: center.y + config.laneWidth/2, label: "M_E", type: 'merge'},
-                {x: center.x - config.roadWidth/2 + mergeOffset, y: center.y - config.laneWidth/2, label: "M_W", type: 'merge'}
+                {x: center.x - config.laneWidth/2, y: center.y + config.roadWidth/2 - mergeOffset, label: "Mn", type: 'merge'},
+                {x: center.x + config.laneWidth/2, y: center.y - config.roadWidth/2 + mergeOffset, label: "Ms", type: 'merge'},
+                {x: center.x + config.roadWidth/2 - mergeOffset, y: center.y + config.laneWidth/2, label: "Me", type: 'merge'},
+                {x: center.x - config.roadWidth/2 + mergeOffset, y: center.y - config.laneWidth/2, label: "Mw", type: 'merge'}
             ];
             return [...points, ...mergePoints];
         }
@@ -255,10 +255,10 @@
         function getVehicleQueuePosition(vehicle, index) {
             const queuePos = index * config.queueSpacing;
             switch(vehicle.approach) {
-                case 'N': return {x: center.x - config.laneWidth/2, y: center.y - config.roadWidth/2 - config.queueOffset - queuePos };
-                case 'S': return {x: center.x + config.laneWidth/2, y: center.y + config.roadWidth/2 + queuePos + 50};
-                case 'E': return {x: center.x + config.roadWidth/2 + queuePos + config.queueOffset - 100 , y: center.y - config.laneWidth/2};
-                case 'W': return {x: center.x - config.roadWidth/2 - config.queueOffset - queuePos + 50 , y: center.y + config.laneWidth/2};
+                case 'N': return {x: center.x - config.laneWidth/2, y: center.y - config.roadWidth/2 - config.queueOffset + queuePos + 100};
+                case 'S': return {x: center.x + config.laneWidth/2, y: center.y + config.roadWidth/2 + queuePos+ 30};
+                case 'E': return {x: center.x + config.roadWidth/2 + queuePos + config.queueOffset - 100, y: center.y - config.laneWidth/2};
+                case 'W': return {x: center.x - config.roadWidth/2 - config.queueOffset + queuePos + 100, y: center.y + config.laneWidth/2};
                 default: return {x: 0, y: 0};
             }
         }
@@ -286,11 +286,7 @@
             const all = enter.merge(groups);
             const approaches = { 'N': [], 'S': [], 'E': [], 'W': [] };
             vehicles.forEach(v => approaches[v.approach].push(v));
-            console.log(approaches['N']);
-            console.log(approaches['S']);
-            console.log(approaches['E']);
-            console.log(approaches['W']);
-            
+
             all.each(function(d) {
                 const vehicle = d;
                 const idx = approaches[vehicle.approach].findIndex(v => v.id === vehicle.id);
@@ -402,50 +398,49 @@
         }
 
         // Mock poll data for testing (replace with your /api/get_state endpoint)
-        function pollUpdates() {
-            fetch('/api/get_state') 
-            .then(response => response.json()) 
-            .then(data => { // store latest state 
-            window.latestState = data || {}; 
-            if (data.vehicles && data.vehicles.length > 0) {
-                console.log(data.vehicles)
-                updateVehicles(data.vehicles);
-            }
-            data.running = true
-
-            // const data = {
-            //     running: true,
-            //     permutation: ['A', 'B'],
-            //     vehicles: [
-            //         {id: 'A', approach: 'E', path: ['C4','C3','C2', 'Mn'], priority_status: false},
-            //         // {id: 'B', approach: 'E', path: ['C2','C6','C9','Mw'], priority_status: true}
-            //     ]
-            // };
-            // updateVehicles(data.vehicles);
-            if (data.running && !window.isAnimating) {
-                const permutation = data.permutation || data.vehicles.map(v => v.id);
-                startPermutationAnimation(permutation, data.vehicles);
-            }
-        }).catch(error => {
-            console.error('Error fetching state:', error);
-        });
-            setTimeout(pollUpdates, 50000); // Poll every 50 seconds
-        }
+        // function pollUpdates() {
+        //     fetch('/api/get_state') 
+        //     .then(response => response.json()) 
+        //     .then(data => { // store latest state 
+        //     window.latestState = data || {}; 
+        //     if (data.vehicles && data.vehicles.length > 0) {
+        //         console.log(data.vehicles)
+        //         updateVehicles(data.vehicles);
+        //     }
+        //     data.running = true
+        //     // const data = {
+        //     //     running: true,
+        //     //     permutation: ['A', 'B'],
+        //     //     vehicles: [
+        //     //         {id: 'A', approach: 'E', path: ['C4','C3','C2', 'Mn'], priority_status: false},
+        //     //         // {id: 'B', approach: 'E', path: ['C2','C6','C9','Mw'], priority_status: true}
+        //     //     ]
+        //     // };
+        //     // updateVehicles(data.vehicles);
+        //     if (data.running && !window.isAnimating) {
+        //         const permutation = data.permutation || data.vehicles.map(v => v.id);
+        //         startPermutationAnimation(permutation, data.vehicles);
+        //     }
+        // }).catch(error => {
+        //     console.error('Error fetching state:', error);
+        // });  
+        //     setTimeout(pollUpdates, 12000); // Poll every 2 seconds
+        // }
 
         // Mock poll data for testing (replace with your /api/get_state endpoint)
-        // function pollUpdates() {
-        //     const data = {
-        //         running: true,
-        //         permutation: ['A', 'B'],
-        //         vehicles: [
-        //             {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false},
-        //             {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true}
-        //         ]
-        //     };
-        //     updateVehicles(data.vehicles);
-        //     if (data.running && !window.isAnimating)
-        //         startPermutationAnimation(data.permutation, data.vehicles);
-        // }
+        function pollUpdates() {
+            const data = {
+                running: true,
+                permutation: ['A', 'B'],
+                vehicles: [
+                    {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false},
+                    {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true}
+                ]
+            };
+            updateVehicles(data.vehicles);
+            if (data.running && !window.isAnimating)
+                startPermutationAnimation(data.permutation, data.vehicles);
+        }
 
         function init() {
             drawRoads();
