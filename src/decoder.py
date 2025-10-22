@@ -19,8 +19,8 @@ from typing import Union
 def is_permutation_valid(
     permutation: List[Vehicle],
     distance_to_first_conflict: Union[Dict[int, float], float],
-    inter_conflict_distance: Union[Dict[Tuple[str, str], float], float],
-    safety_time: float,
+    inter_conflict_distance: Union[Dict[Tuple[str, str], float], float]=10.0,
+    safety_time: float = config.tau,
     queue_spacing: float = 10.0,
 ) -> Tuple[bool, int]:
     """Return True if the permutation is valid (no two vehicles enter same conflict
