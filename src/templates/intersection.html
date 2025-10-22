@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Intersection Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #intersection {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .road { fill: #333; }
+        .lane-marker {
+            stroke: white;
+            stroke-width: 2;
+            stroke-dasharray: 10,10;
+        }
+        .conflict-point { fill: red; opacity: 0.6; }
+        .merge-point { fill: #ff8c00; opacity: 0.8; }
+        .conflict-label,
+        .merge-label {
+            font-size: 11px;
+            fill: black;
+            text-anchor: middle;
+            font-weight: bold;
+        }
+        .merge-label { font-style: italic; }
+        .direction-label {
+            font-size: 16px;
+            fill: white;
+            text-anchor: middle;
+            font-weight: bold;
+        }
+        .lane-label {
+            font-size: 14px;
+            fill: white;
+            text-anchor: middle;
+            font-weight: bold;
+        }
+        .vehicle {
+            fill: #4CAF50;
+            stroke: white;
+            stroke-width: 2;
+        }
+        .vehicle-label {
+            fill: white;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            font-weight: bold;
+            font-size: 12px;
+            pointer-events: none;
+        }
+        .vehicle.emergency { fill: #f44336; }
+        .queue-area {
+            fill: none;
+            stroke: #666;
+            stroke-width: 1;
+            stroke-dasharray: 5,5;
+        }
+    </style>
+</head>
+<body>
+    <div id="intersection"></div>
+    <script>
+        const config = {
+            width: 1000,
+            height: 1000,
+            roadWidth: 120,
+            laneWidth: 60,
+            conflictPointRadius: 4,
+            padding: 100,
+            vehicleRadius: 5,
+            queueOffset: 150,
+            queueSpacing: 50
+        };
+
+        const svg = d3.select("#intersection")
+            .append("svg")
+            .attr("width", config.width + config.padding * 2)
+            .attr("height", config.height + config.padding * 2)
+            .append("g")
+            .attr("transform", `translate(${config.padding}, ${config.padding})`);
+
+        const center = { x: config.width / 2, y: config.height / 2 };
+
+        function drawRoads() {
+            svg.append("rect")
+                .attr("class", "road")
+                .attr("x", center.x - config.roadWidth/2)
+                .attr("y", 0)
+                .attr("width", config.roadWidth)
+                .attr("height", config.height);
+
+            svg.append("rect")
+                .attr("class", "road")
+                .attr("x", 0)
+                .attr("y", center.y - config.roadWidth/2)
+                .attr("width", config.width)
+                .attr("height", config.roadWidth);
+
+            svg.append("line")
+                .attr("class", "lane-marker")
+                .attr("x1", center.x)
+                .attr("y1", 0)
+                .attr("x2", center.x)
+                .attr("y2", config.height);
+
+            svg.append("line")
+                .attr("class", "lane-marker")
+                .attr("x1", 0)
+                .attr("y1", center.y)
+                .attr("x2", config.width)
+                .attr("y2", center.y);
+        }
+
+        function drawDirectionLabels() {
+            const directionLabels = [
+                {text: "N", x: center.x, y: 30},
+                {text: "S", x: center.x, y: config.height - 30},
+                {text: "E", x: config.width - 30, y: center.y},
+                {text: "W", x: 30, y: center.y}
+            ];
+
+            svg.selectAll(".direction-label")
+                .data(directionLabels)
+                .enter()
+                .append("text")
+                .attr("class", "direction-label")
+                .attr("x", d => d.x)
+                .attr("y", d => d.y)
+                .text(d => d.text);
+
+            const laneLabels = [
+                {text: "N", x: center.x - config.laneWidth/2, y: center.y - config.roadWidth/2 - 50},
+                {text: "S", x: center.x + config.laneWidth/2, y: center.y + config.roadWidth/2 + 60},
+                {text: "E", x: center.x + config.roadWidth/2 + 40, y: center.y - config.laneWidth/2},
+                {text: "W", x: center.x - config.roadWidth/2 - 50, y: center.y + config.laneWidth/2}
+            ];
+
+            svg.selectAll(".lane-label")
+                .data(laneLabels)
+                .enter()
+                .append("text")
+                .attr("class", "lane-label")
+                .attr("x", d => d.x)
+                .attr("y", d => d.y)
+                .text(d => d.text);
+        }
+
+        function generateConflictPoints() {
+            const points = [];
+            const baseSpacing = config.laneWidth * 0.45;
+            const layout = [
+                [1,2,3,4],
+                [5,6,7],
+                [8,9],
+                [11,10,12],
+                [13,14,15,16]
+            ];
+            const intersectionHeight = config.roadWidth;
+            const verticalSpacing = intersectionHeight / 6;
+
+            layout.forEach((row, rowIndex) => {
+                const rowWidth = (row.length - 1) * baseSpacing;
+                row.forEach((pointNum, colIndex) => {
+                    const x = center.x - rowWidth/2 + (colIndex * baseSpacing);
+                    const y = center.y - intersectionHeight/3 + (rowIndex * verticalSpacing);
+                    points.push({ x, y, label: `C${pointNum}`, type: 'conflict' });
+                });
+            });
+
+            const mergeOffset = config.laneWidth * 0.2 - 20;
+            const mergePoints = [
+                {x: center.x + config.laneWidth/2, y: center.y - config.roadWidth/2 + mergeOffset, label: "Mn", type: 'merge'},
+                {x: center.x - config.laneWidth/2, y: center.y + config.roadWidth/2 - mergeOffset, label: "Ms", type: 'merge'},
+                {x: center.x + config.roadWidth/2 - mergeOffset, y: center.y + config.laneWidth/2, label: "Me", type: 'merge'},
+                {x: center.x - config.roadWidth/2 + mergeOffset, y: center.y - config.laneWidth/2, label: "Mw", type: 'merge'}
+            ];
+            return [...points, ...mergePoints];
+        }
+
+        function drawConflictPoints() {
+            const points = generateConflictPoints();
+
+            const conflicts = points.filter(p => p.type === 'conflict');
+            svg.selectAll(".conflict-point")
+                .data(conflicts)
+                .enter()
+                .append("circle")
+                .attr("class", "conflict-point")
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y)
+                .attr("r", config.conflictPointRadius);
+
+            const merges = points.filter(p => p.type === 'merge');
+            svg.selectAll(".merge-point")
+                .data(merges)
+                .enter()
+                .append("circle")
+                .attr("class", "merge-point")
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y)
+                .attr("r", config.conflictPointRadius);
+
+            svg.selectAll(".conflict-label")
+                .data(conflicts)
+                .enter()
+                .append("text")
+                .attr("class", "conflict-label")
+                .attr("x", d => d.x)
+                .attr("y", d => d.y - 10)
+                .text(d => d.label);
+
+            svg.selectAll(".merge-label")
+                .data(merges)
+                .enter()
+                .append("text")
+                .attr("class", "merge-label")
+                .attr("x", d => d.x)
+                .attr("y", d => d.y - 10)
+                .text(d => d.label);
+
+            window.conflictPoints = points;
+            window.conflictPointsMap = {};
+            points.forEach(p => { window.conflictPointsMap[p.label] = {x: p.x, y: p.y, type: p.type}; });
+        }
+
+        function drawQueueAreas() {
+            const queueAreas = [
+                {x: center.x - config.roadWidth/2, y: center.y - config.roadWidth/2 - config.queueOffset, width: config.roadWidth, height: config.queueOffset},
+                {x: center.x - config.roadWidth/2, y: center.y + config.roadWidth/2, width: config.roadWidth, height: config.queueOffset},
+                {x: center.x + config.roadWidth/2, y: center.y - config.roadWidth/2, width: config.queueOffset, height: config.roadWidth},
+                {x: center.x - config.roadWidth/2 - config.queueOffset, y: center.y - config.roadWidth/2, width: config.queueOffset, height: config.roadWidth}
+            ];
+
+            svg.selectAll(".queue-area")
+                .data(queueAreas)
+                .enter()
+                .append("rect")
+                .attr("class", "queue-area")
+                .attr("x", d => d.x)
+                .attr("y", d => d.y)
+                .attr("width", d => d.width)
+                .attr("height", d => d.height);
+        }
+
+        function getVehicleQueuePosition(vehicle, index) {
+            const queuePos = index * config.queueSpacing;
+            switch(vehicle.approach) {
+                case 'N': return {x: center.x - config.laneWidth/2, y: center.y - config.roadWidth/2 - config.queueOffset + queuePos + 100};
+                case 'S': return {x: center.x + config.laneWidth/2, y: center.y + config.roadWidth/2 + queuePos+ 30};
+                case 'E': return {x: center.x + config.roadWidth/2 + queuePos + config.queueOffset - 100, y: center.y - config.laneWidth/2};
+                case 'W': return {x: center.x - config.roadWidth/2 - config.queueOffset + queuePos + 100, y: center.y + config.laneWidth/2};
+                default: return {x: 0, y: 0};
+            }
+        }
+
+        function updateVehicles(vehicles) {
+            const groups = svg.selectAll('.vehicle-group')
+                .data(vehicles, d => d.id);
+
+            groups.exit().remove();
+
+            const enter = groups.enter()
+                .append('g')
+                .attr('class', 'vehicle-group');
+
+            enter.append('circle')
+                .attr('r', config.vehicleRadius)
+                .attr('class', d => `vehicle ${d.priority_status ? 'emergency' : ''}`);
+
+            enter.append('text')
+                .attr('class', 'vehicle-label')
+                .attr('dominant-baseline', 'middle')
+                .attr('text-anchor', 'middle')
+                .text(d => d.id);
+
+            const all = enter.merge(groups);
+            const approaches = { 'N': [], 'S': [], 'E': [], 'W': [] };
+            vehicles.forEach(v => approaches[v.approach].push(v));
+
+            all.each(function(d) {
+                const vehicle = d;
+                const idx = approaches[vehicle.approach].findIndex(v => v.id === vehicle.id);
+                const pos = getVehicleQueuePosition(vehicle, idx);
+                const g = d3.select(this);
+                g.select('circle')
+                    .attr('cx', pos.x)
+                    .attr('cy', pos.y)
+                    .attr('class', `vehicle ${vehicle.priority_status ? 'emergency' : ''}`);
+                g.select('text')
+                    .attr('x', pos.x)
+                    .attr('y', pos.y)
+                    .text(vehicle.id);
+                g.attr('transform', null);
+            });
+        }
+
+        function removeVehicleFromDOM(id) {
+            svg.selectAll('.vehicle-group').filter(d => d && d.id === id).remove();
+        }
+
+        function animateVehicleAlongPath(vehicle, onFinish) {
+            if (!vehicle.path || vehicle.path.length === 0) {
+                removeVehicleFromDOM(vehicle.id);
+                if (onFinish) onFinish();
+                return;
+            }
+
+            let sel = svg.selectAll('.vehicle-group').filter(d => d && d.id === vehicle.id);
+            if (sel.empty()) {
+                const pos = getVehicleQueuePosition(vehicle, 0);
+                sel = svg.append('g').attr('class', 'vehicle-group').datum(vehicle);
+                sel.append('circle')
+                    .attr('r', config.vehicleRadius)
+                    .attr('class', `vehicle ${vehicle.priority_status ? 'emergency' : ''}`)
+                    .attr('cx', pos.x)
+                    .attr('cy', pos.y);
+                sel.append('text')
+                    .attr('class', 'vehicle-label')
+                    .attr('x', pos.x)
+                    .attr('y', pos.y)
+                    .text(vehicle.id);
+            } else {
+                sel.datum(vehicle);
+            }
+
+            let i = 0;
+            function step() {
+                if (i >= vehicle.path.length) {
+                    removeVehicleFromDOM(vehicle.id);
+                    if (onFinish) onFinish();
+                    return;
+                }
+                const targetLabel = vehicle.path[i];
+                const target = window.conflictPointsMap && window.conflictPointsMap[targetLabel];
+                i++;
+                if (!target) { step(); return; }
+
+                const circle = sel.select('circle');
+                const cx = +circle.attr('cx');
+                const cy = +circle.attr('cy');
+                const duration = 800;
+
+                sel.transition()
+                    .duration(duration)
+                    .attrTween('transform', function() {
+                        const dx = target.x - cx;
+                        const dy = target.y - cy;
+                        return function(t) {
+                            const nx = cx + dx * t;
+                            const ny = cy + dy * t;
+                            return `translate(${nx - cx}, ${ny - cy})`;
+                        };
+                    })
+                    .on('end', function() {
+                        circle.attr('cx', target.x).attr('cy', target.y);
+                        sel.select('text').attr('x', target.x).attr('y', target.y);
+                        sel.attr('transform', null);
+                        step();
+                    });
+            }
+            step();
+        }
+
+        function startPermutationAnimation(permutation, vehicles) {
+            window.isAnimating = true;
+            const vehicleMap = {};
+            (vehicles || []).forEach(v => { vehicleMap[v.id] = v; });
+
+            let idx = 0;
+            function next() {
+                if (idx >= permutation.length) {
+                    window.isAnimating = false;
+                    return;
+                }
+                const vid = permutation[idx];
+                const vehicle = vehicleMap[vid];
+                if (!vehicle) {
+                    idx++;
+                    next();
+                    return;
+                }
+                animateVehicleAlongPath(vehicle, function() {
+                    idx++;
+                    setTimeout(next, 200);
+                });
+            }
+            next();
+        }
+
+        // Mock poll data for testing (replace with your /api/get_state endpoint)
+        function pollUpdates() {
+            fetch('/api/get_state') 
+            .then(response => response.json()) 
+            .then(data => { // store latest state 
+            window.latestState = data || {}; 
+            if (data.vehicles && data.vehicles.length > 0) {
+                console.log(data.vehicles)
+                updateVehicles(data.vehicles);
+            }
+            data.running = true
+            // const data = {
+            //     running: true,
+            //     permutation: ['A', 'B'],
+            //     vehicles: [
+            //         {id: 'A', approach: 'E', path: ['C4','C3','C2', 'Mn'], priority_status: false},
+            //         // {id: 'B', approach: 'E', path: ['C2','C6','C9','Mw'], priority_status: true}
+            //     ]
+            // };
+            // updateVehicles(data.vehicles);
+            if (data.running && !window.isAnimating) {
+                const permutation = data.permutation || data.vehicles.map(v => v.id);
+                startPermutationAnimation(permutation, data.vehicles);
+            }
+        }).catch(error => {
+            console.error('Error fetching state:', error);
+        });  
+            setTimeout(pollUpdates, 12000); // Poll every 2 seconds
+        }
+
+                // Mock poll data for testing (replace with your /api/get_state endpoint)
+        // function pollUpdates() {
+        //     const data = {
+        //         running: true,
+        //         permutation: ['A', 'B'],
+        //         vehicles: [
+        //             {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false},
+        //             {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true}
+        //         ]
+        //     };
+        //     updateVehicles(data.vehicles);
+        //     if (data.running && !window.isAnimating)
+        //         startPermutationAnimation(data.permutation, data.vehicles);
+        // }
+
+        function init() {
+            drawRoads();
+            drawDirectionLabels();
+            drawConflictPoints();
+            drawQueueAreas();
+            pollUpdates(); // test run
+        }
+
+        init();
+    </script>
+</body>
+</html>
