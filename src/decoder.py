@@ -68,7 +68,7 @@ def run_decoder(permutation: List['Vehicle'],
                 # Follower: Arrives after leader + time gap due to physical spacing
                 # Time gap = physical distance / follower's speed
                 time_gap = config.safety_distance / safe_speed
-                # Based on [cite: 126] distance offset logic, converted to time offset
+                # Based on distance offset logic, converted to time offset
                 current_t_ear = last_t_ear + time_gap
 
             t_ear[v.id] = current_t_ear
@@ -119,7 +119,6 @@ def run_decoder(permutation: List['Vehicle'],
 
             # Safety check: ensure point 'p' is valid and has a headway time defined
             if p not in tau_p_dict:
-                # print(f"Warning: Point {p} in path of vehicle {v_id} not found in tau_p_dict. Marking as finished.")
                 if vehicle_state.get(v_id) != 'FINISHED':
                     vehicle_state[v_id] = 'FINISHED'; num_finished += 1; made_progress_this_iteration = True
                 continue
@@ -142,26 +141,24 @@ def run_decoder(permutation: List['Vehicle'],
                 tau_prev = tau_p_dict.get(p_prev, config.tau)
                 t_prev_departure = scheduled_times[v_id][p_prev] + tau_prev
 
-                # Calculate travel time from p_prev to p
+                # *** MODIFICATION START ***
+                # Calculate travel time from p_prev to p using config parameter
                 distance = config.inter_conflict_distance # Assumes uniform distance
                 speed = speeds_dict.get(v_id, 1e-6)
                 travel_time = distance / max(speed, 1e-6)
+                # *** MODIFICATION END ***
 
-                t_reach = t_prev_departure + travel_time
+                t_reach = t_prev_departure + travel_time # ADDED travel_time here
 
             # --- Determine Scheduled Time (t_scheduled) ---
-            # [cite_start]Earliest time the *current point* is free (based on [cite: 145])
-            t_available = availability_clocks[p]
-            # Scheduled time is the later of when the vehicle arrives *and* when the point is free
-            # Core logic from Algorithm 1
-            t_scheduled = max(t_reach, t_available)
+            t_available = availability_clocks[p] # When point 'p' becomes free
+            t_scheduled = max(t_reach, t_available) # Vehicle waits if point busy or hasn't arrived
 
             # --- Update State ---
             scheduled_times.setdefault(v_id, {})[p] = t_scheduled
-            # [cite_start]Point 'p' is now busy until departure (based on [cite: 174])
-            availability_clocks[p] = t_scheduled + tau
-            path_pointers[v_id] = path_idx + 1 # Advance vehicle to next point in its path
-            vehicle_state[v_id] = 'RUNNING' # Mark as actively moving
+            availability_clocks[p] = t_scheduled + tau # Point 'p' is now busy until departure
+            path_pointers[v_id] = path_idx + 1 # Advance vehicle to next point
+            vehicle_state[v_id] = 'RUNNING'
             made_progress_this_iteration = True # We successfully scheduled a point
 
         # Update the set of active vehicles for the next pass
@@ -172,21 +169,14 @@ def run_decoder(permutation: List['Vehicle'],
         if not made_progress_this_iteration and num_finished < num_vehicles_in_solution:
              stuck_vehicles_count = 0
              for v_id_check in active_vehicles_ids:
-                 # Check if vehicle was processed but couldn't advance (dependency issue)
                  if v_id_check in processed_vehicle_ids:
                      stuck_vehicles_count += 1
-                     # print(f"Warning: Vehicle {v_id_check} potentially stuck.")
-                     # Penalize the stuck vehicle
                      if vehicle_state.get(v_id_check) != 'FINISHED':
-                         if v_id_check not in t_ear: t_ear[v_id_check] = 0 # Need t_ear for delay calc
+                         if v_id_check not in t_ear: t_ear[v_id_check] = 0
                          scheduled_times.setdefault(v_id_check, {})['__PENALTY__'] = math.inf
-                         vehicle_state[v_id_check] = 'FINISHED' # Consider it done
+                         vehicle_state[v_id_check] = 'FINISHED'
                          num_finished += 1
-
-             # If any vehicles were identified as stuck, break the loop
-             if stuck_vehicles_count > 0:
-                 # print(f"Warning: Decoder loop potentially stuck at iter {loop_count}. Assigning high penalty to {stuck_vehicles_count} vehicles.")
-                 break
+             if stuck_vehicles_count > 0: break
 
 
     # --- 5. Calculate Final Delays ---
@@ -207,22 +197,21 @@ def run_decoder(permutation: List['Vehicle'],
             delay = 0.0
         else:
             # Calculate Free-Flow Time (t_free) including travel time
-            # [cite_start]Based on[cite: 136], adapted for travel time
             path_headway_sum = sum(tau_p_dict.get(p, config.tau) for p in v.path)
             num_segments = len(v.path) - 1 # Number of inter-point movements
+
+            # *** MODIFICATION START ***
+            # Include free-flow travel time calculation
             free_flow_travel = num_segments * config.inter_conflict_distance / max(speeds_dict.get(v.id, 1e-6), 1e-6) if num_segments > 0 else 0
             t_free = t_ear[v.id] + path_headway_sum + free_flow_travel
+            # *** MODIFICATION END ***
 
             # Calculate Actual Exit Time (t_exit)
             last_p = v.path[-1]
             if last_p not in scheduled_times.get(v.id, {}):
-                 # This implies the vehicle never finished its path in the simulation
-                 delay = 9999.0 # High penalty
+                 delay = 9999.0 # High penalty if path not completed
             else:
-                # Actual exit time = scheduled arrival at last point + headway at last point
-                # [cite_start]Based on [cite: 135]
                 t_exit = scheduled_times[v.id][last_p] + tau_p_dict.get(last_p, config.tau)
-                # [cite_start]Based on [cite: 138]
                 delay = max(0.0, t_exit - t_free)
 
         decoder_results.append({
@@ -233,8 +222,6 @@ def run_decoder(permutation: List['Vehicle'],
 
     # --- 6. Return Data ---
     if return_full_schedule:
-        # Return all data needed for animation
         return decoder_results, scheduled_times, t_ear
     else:
-        # Return only results needed for SA objective calculation
         return decoder_results

@@ -14,8 +14,8 @@ from decoder import run_decoder  # <-- Imports the "Algorithm 1" decoder
 # --- SA Parameters ---
 T_INITIAL = 1000.0        # Initial temperature
 T_MIN = 1.0               # Final temperature
-COOLING_RATE = 0.99       # Cooling rate (e.g., 0.99)
-MAX_ITER_PER_TEMP = 20    # Iterations at each temperature step
+COOLING_RATE = 0.99      # Cooling rate (e.g., 0.99) 
+MAX_ITER_PER_TEMP = 50    # Iterations at each temperature step
 MAX_TOTAL_ITERATIONS = 100000 # <-- Total iteration limit
 
 def create_initial_solution(geom):
@@ -46,7 +46,7 @@ def create_initial_solution(geom):
             last_speed = new_speed
 
     initial_speeds_list = [initial_speeds_dict[v.id] for v in initial_perm]
-    
+    print(f"initial perm: {[v.id for v in initial_perm]}")
     return initial_perm, initial_speeds_list
 
 
