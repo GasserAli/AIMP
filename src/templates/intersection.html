@@ -179,8 +179,8 @@
 
             const mergeOffset = config.laneWidth * 0.2 - 20;
             const mergePoints = [
-                {x: center.x + config.laneWidth/2, y: center.y - config.roadWidth/2 + mergeOffset, label: "Mn", type: 'merge'},
-                {x: center.x - config.laneWidth/2, y: center.y + config.roadWidth/2 - mergeOffset, label: "Ms", type: 'merge'},
+                {x: center.x - config.laneWidth/2, y: center.y + config.roadWidth/2 - mergeOffset, label: "Mn", type: 'merge'},
+                {x: center.x + config.laneWidth/2, y: center.y - config.roadWidth/2 + mergeOffset, label: "Ms", type: 'merge'},
                 {x: center.x + config.roadWidth/2 - mergeOffset, y: center.y + config.laneWidth/2, label: "Me", type: 'merge'},
                 {x: center.x - config.roadWidth/2 + mergeOffset, y: center.y - config.laneWidth/2, label: "Mw", type: 'merge'}
             ];
@@ -398,49 +398,49 @@
         }
 
         // Mock poll data for testing (replace with your /api/get_state endpoint)
-        function pollUpdates() {
-            fetch('/api/get_state') 
-            .then(response => response.json()) 
-            .then(data => { // store latest state 
-            window.latestState = data || {}; 
-            if (data.vehicles && data.vehicles.length > 0) {
-                console.log(data.vehicles)
-                updateVehicles(data.vehicles);
-            }
-            data.running = true
-            // const data = {
-            //     running: true,
-            //     permutation: ['A', 'B'],
-            //     vehicles: [
-            //         {id: 'A', approach: 'E', path: ['C4','C3','C2', 'Mn'], priority_status: false},
-            //         // {id: 'B', approach: 'E', path: ['C2','C6','C9','Mw'], priority_status: true}
-            //     ]
-            // };
-            // updateVehicles(data.vehicles);
-            if (data.running && !window.isAnimating) {
-                const permutation = data.permutation || data.vehicles.map(v => v.id);
-                startPermutationAnimation(permutation, data.vehicles);
-            }
-        }).catch(error => {
-            console.error('Error fetching state:', error);
-        });  
-            setTimeout(pollUpdates, 12000); // Poll every 2 seconds
-        }
-
-                // Mock poll data for testing (replace with your /api/get_state endpoint)
         // function pollUpdates() {
-        //     const data = {
-        //         running: true,
-        //         permutation: ['A', 'B'],
-        //         vehicles: [
-        //             {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false},
-        //             {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true}
-        //         ]
-        //     };
-        //     updateVehicles(data.vehicles);
-        //     if (data.running && !window.isAnimating)
-        //         startPermutationAnimation(data.permutation, data.vehicles);
+        //     fetch('/api/get_state') 
+        //     .then(response => response.json()) 
+        //     .then(data => { // store latest state 
+        //     window.latestState = data || {}; 
+        //     if (data.vehicles && data.vehicles.length > 0) {
+        //         console.log(data.vehicles)
+        //         updateVehicles(data.vehicles);
+        //     }
+        //     data.running = true
+        //     // const data = {
+        //     //     running: true,
+        //     //     permutation: ['A', 'B'],
+        //     //     vehicles: [
+        //     //         {id: 'A', approach: 'E', path: ['C4','C3','C2', 'Mn'], priority_status: false},
+        //     //         // {id: 'B', approach: 'E', path: ['C2','C6','C9','Mw'], priority_status: true}
+        //     //     ]
+        //     // };
+        //     // updateVehicles(data.vehicles);
+        //     if (data.running && !window.isAnimating) {
+        //         const permutation = data.permutation || data.vehicles.map(v => v.id);
+        //         startPermutationAnimation(permutation, data.vehicles);
+        //     }
+        // }).catch(error => {
+        //     console.error('Error fetching state:', error);
+        // });  
+        //     setTimeout(pollUpdates, 12000); // Poll every 2 seconds
         // }
+
+        // Mock poll data for testing (replace with your /api/get_state endpoint)
+        function pollUpdates() {
+            const data = {
+                running: true,
+                permutation: ['A', 'B'],
+                vehicles: [
+                    {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false},
+                    {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true}
+                ]
+            };
+            updateVehicles(data.vehicles);
+            if (data.running && !window.isAnimating)
+                startPermutationAnimation(data.permutation, data.vehicles);
+        }
 
         function init() {
             drawRoads();
