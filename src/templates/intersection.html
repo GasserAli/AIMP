@@ -79,7 +79,8 @@
             padding: 100,
             vehicleRadius: 5,
             queueOffset: 150,
-            queueSpacing: 50
+            queueSpacing: 50,
+            safeDistance: 50  // Using same value as queueSpacing for consistency
         };
 
         const svg = d3.select("#intersection")
@@ -255,15 +256,35 @@
         function getVehicleQueuePosition(vehicle, index) {
             const queuePos = index * config.queueSpacing;
             switch(vehicle.approach) {
-                case 'N': return {x: center.x - config.laneWidth/2, y: center.y - config.roadWidth/2 - config.queueOffset + queuePos + 100};
-                case 'S': return {x: center.x + config.laneWidth/2, y: center.y + config.roadWidth/2 + queuePos+ 30};
-                case 'E': return {x: center.x + config.roadWidth/2 + queuePos + config.queueOffset - 100, y: center.y - config.laneWidth/2};
-                case 'W': return {x: center.x - config.roadWidth/2 - config.queueOffset + queuePos + 100, y: center.y + config.laneWidth/2};
+                case 'N': return {x: center.x - config.laneWidth/2, y: center.y - config.roadWidth/2 - config.queueOffset - queuePos };
+                case 'S': return {x: center.x + config.laneWidth/2, y: center.y + config.roadWidth/2 + queuePos + 50};
+                case 'E': return {x: center.x + config.roadWidth/2 + queuePos + config.queueOffset - 100 , y: center.y - config.laneWidth/2};
+                case 'W': return {x: center.x - config.roadWidth/2 - config.queueOffset - queuePos + 50 , y: center.y + config.laneWidth/2};
                 default: return {x: 0, y: 0};
             }
         }
 
         function updateVehicles(vehicles) {
+            // Get the current permutation order
+            const permutation = window.latestPermutation || [];
+            
+            // First group vehicles by approach
+            const approaches = { 'N': [], 'S': [], 'E': [], 'W': [] };
+            
+            // Sort vehicles within each approach based on permutation order
+            vehicles.forEach(v => {
+                if (approaches[v.approach]) {
+                    approaches[v.approach].push(v);
+                }
+            });
+            
+            // Sort each approach group according to permutation order
+            Object.keys(approaches).forEach(approach => {
+                approaches[approach].sort((a, b) => {
+                    return permutation.indexOf(a.id) - permutation.indexOf(b.id);
+                });
+            });
+
             const groups = svg.selectAll('.vehicle-group')
                 .data(vehicles, d => d.id);
 
@@ -284,23 +305,26 @@
                 .text(d => d.id);
 
             const all = enter.merge(groups);
-            const approaches = { 'N': [], 'S': [], 'E': [], 'W': [] };
-            vehicles.forEach(v => approaches[v.approach].push(v));
-
+            
             all.each(function(d) {
                 const vehicle = d;
-                const idx = approaches[vehicle.approach].findIndex(v => v.id === vehicle.id);
-                const pos = getVehicleQueuePosition(vehicle, idx);
-                const g = d3.select(this);
-                g.select('circle')
-                    .attr('cx', pos.x)
-                    .attr('cy', pos.y)
-                    .attr('class', `vehicle ${vehicle.priority_status ? 'emergency' : ''}`);
-                g.select('text')
-                    .attr('x', pos.x)
-                    .attr('y', pos.y)
-                    .text(vehicle.id);
-                g.attr('transform', null);
+                // Find index in the sorted approach group
+                const approachVehicles = approaches[vehicle.approach] || [];
+                const idx = approachVehicles.findIndex(v => v.id === vehicle.id);
+                
+                if (idx !== -1) {
+                    const pos = getVehicleQueuePosition(vehicle, idx);
+                    const g = d3.select(this);
+                    g.select('circle')
+                        .attr('cx', pos.x)
+                        .attr('cy', pos.y)
+                        .attr('class', `vehicle ${vehicle.priority_status ? 'emergency' : ''}`);
+                    g.select('text')
+                        .attr('x', pos.x)
+                        .attr('y', pos.y)
+                        .text(vehicle.id);
+                    g.attr('transform', null);
+                }
             });
         }
 
@@ -465,25 +489,41 @@
             const vehicleMap = {};
             (vehicles || []).forEach(v => { vehicleMap[v.id] = v; });
 
-            staggerMs = typeof staggerMs === 'number' ? staggerMs : 0;
-            let active = 0;
-
-            permutation.forEach((vid, i) => {
+            // Group vehicles by approach direction to handle safe distances
+            const approachGroups = {};
+            permutation.forEach(vid => {
                 const vehicle = vehicleMap[vid];
-                if (!vehicle) return; // skip missing vehicles
-
-                const delay = staggerMs > 0 ? i * staggerMs : 0;
-                setTimeout(() => {
-                    active++;
-                    animateVehicleAlongPath(vehicle, function() {
-                        active--;
-                        // when all animations complete, clear flag
-                        if (active === 0) window.isAnimating = false;
-                    });
-                }, delay);
+                if (!vehicle) return;
+                if (!approachGroups[vehicle.approach]) {
+                    approachGroups[vehicle.approach] = [];
+                }
+                approachGroups[vehicle.approach].push(vehicle);
             });
 
-            // if there were no vehicles, clear the flag immediately
+            // Sort vehicles within each approach group by their position in the permutation
+            Object.values(approachGroups).forEach(group => {
+                group.sort((a, b) => permutation.indexOf(a.id) - permutation.indexOf(b.id));
+            });
+
+            let active = 0;
+            
+            // Calculate proper delay for each vehicle based on approach direction and position
+            Object.values(approachGroups).forEach(group => {
+                group.forEach((vehicle, idx) => {
+                    // Base delay ensures proper spacing between vehicles in the same lane
+                    const baseDelay = idx * (config.safeDistance / (vehicle.velocity || 10)) * 1000;
+                    
+                    setTimeout(() => {
+                        active++;
+                        animateVehicleAlongPath(vehicle, function() {
+                            active--;
+                            if (active === 0) window.isAnimating = false;
+                        });
+                    }, baseDelay);
+                });
+            });
+
+            // If there were no vehicles, clear the flag immediately
             if (permutation.length === 0) window.isAnimating = false;
         }
 
@@ -521,10 +561,14 @@
         function pollUpdates() {
             const data = {
                 running: true,
-                permutation: ['A', 'B'],
+                permutation: ['A', 'B','C','D','E','F' ],
                 vehicles: [
-                    {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false,velocity:80},
-                    {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true,velocity:50}
+                    {id: 'A', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false,velocity:40},
+                    {id: 'B', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true,velocity:50},
+                     {id: 'C', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false,velocity:60},
+                    {id: 'D', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true,velocity:40},
+                     {id: 'E', approach: 'N', path: ['C2','C6','C9','C12','Me'], priority_status: false,velocity:50},
+                    {id: 'F', approach: 'E', path: ['C7','C9','C10', 'C14','Mn'], priority_status: true,velocity:40}
                 ]
             };
             updateVehicles(data.vehicles);
