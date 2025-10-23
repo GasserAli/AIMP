@@ -61,11 +61,12 @@ import objective
 from geometry import Geometry
 from decoder import run_decoder
 from vehicle import Vehicle
+import sa
 
 # =============================================================================
 # CONFIGURATION: Choose Visualization Method
 # =============================================================================
-VISUALIZATION_METHOD = 'matplotlib'  # Options: 'matplotlib', 'web', or 'none'
+VISUALIZATION_METHOD = 'web'  # Options: 'matplotlib', 'web', or 'none'
 # =============================================================================
 
 # --- Conditional Imports Based on Visualization Method ---
@@ -103,11 +104,11 @@ else:
 # =============================================================================
 # SA PARAMETERS
 # =============================================================================
-T_INITIAL = 1000.0
-T_MIN = 1.0
-COOLING_RATE = 0.99
-MAX_ITER_PER_TEMP = 20
-MAX_TOTAL_ITERATIONS = 100000
+T_INITIAL = sa.T_INITIAL
+T_MIN = sa.T_MIN 
+COOLING_RATE = sa.COOLING_RATE
+MAX_ITER_PER_TEMP = sa.MAX_ITER_PER_TEMP
+MAX_TOTAL_ITERATIONS = sa.MAX_TOTAL_ITERATIONS
 
 
 # =============================================================================

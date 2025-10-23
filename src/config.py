@@ -4,7 +4,7 @@ from vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 # --- Tunable Parameters ---
 # These variables can be imported by any other file.
 
-velocity_range = (8,8)  # Minimum and maximum velocity for all vehicles
+velocity_range = (10,12)  # Minimum and maximum velocity for all vehicles
 tau = 1.0                # Headway time (in seconds)
 alpha = 10.0
 beta = 1.0
