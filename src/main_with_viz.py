@@ -65,7 +65,7 @@ from vehicle import Vehicle
 # =============================================================================
 # CONFIGURATION: Choose Visualization Method
 # =============================================================================
-VISUALIZATION_METHOD = 'web'  # Options: 'matplotlib', 'web', or 'none'
+VISUALIZATION_METHOD = 'none'  # Options: 'matplotlib', 'web', or 'none'
 # =============================================================================
 
 # --- Conditional Imports Based on Visualization Method ---
@@ -176,12 +176,20 @@ def generate_neighbor(perm_current, speeds_current, geom):
 
 def evaluate_solution(permutation, speeds, geom, tau_p_dict, return_full_schedule=False):
     """Evaluate a solution using decoder and objective function."""
-    decoder_results = run_decoder(permutation, speeds, geom, tau_p_dict)
-    obj_dict = objective.calculate_objective(decoder_results)
-    
     if return_full_schedule:
-        return obj_dict, decoder_results['schedule'], decoder_results['t_ear']
-    return obj_dict
+        # Decoder returns (decoder_results, scheduled_times, t_ear)
+        decoder_results, scheduled_times, t_ear = run_decoder(
+            permutation, speeds, geom, tau_p_dict, return_full_schedule=True
+        )
+        obj_dict = objective.calculate_objective(decoder_results)
+        return obj_dict, scheduled_times, t_ear
+    else:
+        # Decoder returns just decoder_results (list)
+        decoder_results = run_decoder(
+            permutation, speeds, geom, tau_p_dict, return_full_schedule=False
+        )
+        obj_dict = objective.calculate_objective(decoder_results)
+        return obj_dict
 
 
 def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
