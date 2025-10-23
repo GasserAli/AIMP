@@ -4,12 +4,12 @@ from vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 # --- Tunable Parameters ---
 # These variables can be imported by any other file.
 
-velocity_range = (12,12)  # Minimum and maximum velocity for all vehicles
-tau = 2.0                # Headway time (in seconds)
-alpha = 1.0
+velocity_range = (8,8)  # Minimum and maximum velocity for all vehicles
+tau = 1.0                # Headway time (in seconds)
+alpha = 10.0
 beta = 1.0
-safety_distance = 5.0    # Safety distance between vehicles (in meters)
-inter_conflict_distance = 5.0  # Distance between conflict points (in meters)
+safety_distance = 4    # Safety distance between vehicles (in meters)
+inter_conflict_distance = 4  # Distance between conflict points (in meters)
 # --- Permutation of vehicles (pi) ---
 # This list can also be imported by other files.
 pi = [

@@ -17,8 +17,8 @@ except ImportError:
     class Geometry: pass # Dummy class
 
 # --- Constants for Layout (Derived from your map) ---
-VEHICLE_RADIUS = 1.5 # Visual size of vehicle points
-QUEUE_SPACING_VIS_FACTOR = 1.8
+VEHICLE_RADIUS = 2.0 # INCREASED Visual size of vehicle points
+QUEUE_SPACING_VIS_FACTOR = 4.0 # INCREASED to separate queued cars visually
 LANE_WIDTH = 20.0 # From your coordinate grid
 
 # --- Extended Plot limits to show queues ---
@@ -32,7 +32,7 @@ EXTENT_X = MAX_X - MIN_X
 EXTENT_Y = MAX_Y - MIN_Y
 
 # --- *** YOUR HARDCODED COORDINATE MAP *** ---
-# Lane-specific points (S_X_L) have been omitted.
+# Lane-specific points (S_X_L) are now permanently omitted.
 POINT_COORDINATES = {
     # Conflict Points (C1-C16)
     'C1': (0, 60),  'C2': (20, 60),  'C3': (40, 60),  'C4': (60, 60),
@@ -410,72 +410,59 @@ class IntersectionVisualization:
     def setup_intersection_layout(self):
         """
         Draws roads, lanes, queues, and trajectories based on the
-        hardcoded coordinates being CENTERLINES.
+        hardcoded coordinates being CENTERLINES, visually scaling the roads and removing unused lines.
         """
         road_color = '#606060'; line_color = '#FFFFFF'; queue_color = '#404040'
         ylims = (MIN_Y, MAX_Y); xlims = (MIN_X, MAX_X)
         
-        # --- NEW ROAD GEOMETRY ---
-        # Your coordinates (e.g., x=0, x=20) are centerlines.
-        # This means the road "gutter" is 10 units on either side.
-        
-        # Vertical Road: Has centerlines at 0, 20, 40, 60.
-        # Total road width is from x=-10 to x=70.
+        # --- ROAD GEOMETRY ---
+        # Vertical Road Area: x= -10 to x=70
         self.ax.add_patch(Rectangle((-10, MIN_Y), 80, EXTENT_Y, color=road_color, zorder=0))
         
-        # Horizontal Road: Has centerlines at 0, 20, 40, 60.
-        # Total road width is from y=-10 to y=70.
+        # Horizontal Road Area: y=-10 to y=70
         self.ax.add_patch(Rectangle((MIN_X, -10), EXTENT_X, 80, color=road_color, zorder=0))
-        # --- END ROAD GEOMETRY ---
 
 
-        # --- *** THIS IS THE CRITICAL VISUAL FIX *** ---
-        # Draw dashed lines AT the centerlines: 0, 20, 40, 60
-        # Draw solid dividers (medians) AT: 30
+        # --- LANE LINES (Only keeping primary queue lines and median) ---
         
         # Vertical Lines
-        self.ax.plot([0, 0], ylims, color=line_color, ls='--', lw=0.5, zorder=1)   # x=0 centerline
-        self.ax.plot([20, 20], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=20 centerline
+        self.ax.plot([0, 0], ylims, color=line_color, ls='--', lw=0.5, zorder=1)   # x=0 centerline (Primary N/S queue line)
+        # self.ax.plot([20, 20], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=20 (REMOVED)
         self.ax.plot([30, 30], ylims, color=line_color, ls='-', lw=1.0, zorder=1)  # x=30 solid median
-        self.ax.plot([40, 40], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=40 centerline
-        self.ax.plot([60, 60], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=60 centerline
+        # self.ax.plot([40, 40], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=40 (REMOVED)
+        self.ax.plot([60, 60], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=60 centerline (Primary S/N queue line)
         
         # Horizontal Lines
-        self.ax.plot(xlims, [0, 0], color=line_color, ls='--', lw=0.5, zorder=1)   # y=0 centerline
-        self.ax.plot(xlims, [20, 20], color=line_color, ls='--', lw=0.5, zorder=1) # y=20 centerline
+        self.ax.plot(xlims, [0, 0], color=line_color, ls='--', lw=0.5, zorder=1)   # y=0 centerline (Primary W/E queue line)
+        # self.ax.plot(xlims, [20, 20], color=line_color, ls='--', lw=0.5, zorder=1) # y=20 (REMOVED)
         self.ax.plot(xlims, [30, 30], color=line_color, ls='-', lw=1.0, zorder=1)  # y=30 solid median
-        self.ax.plot(xlims, [40, 40], color=line_color, ls='--', lw=0.5, zorder=1) # y=40 centerline
-        self.ax.plot(xlims, [60, 60], color=line_color, ls='--', lw=0.5, zorder=1) # y=60 centerline
-        # --- *** END OF VISUAL FIX *** ---
+        # self.ax.plot(xlims, [40, 40], color=line_color, ls='--', lw=0.5, zorder=1) # y=40 (REMOVED)
+        self.ax.plot(xlims, [60, 60], color=line_color, ls='--', lw=0.5, zorder=1) # y=60 centerline (Primary E/W queue line)
 
 
-        # --- NEW QUEUE BOXES ---
-        # Position queue boxes on the correct new road "legs"
-        q_len = 20.0 # Visual length of queue box
+        # --- NEW QUEUE BOXES (Visually confirms queue area is defined by outer lines and median) ---
+        q_len = 20.0 
         
-        # N Queue Area (on road x=-10 to 30, above y=70)
+        # N Queue Area (x=-10 to 30, above y=70)
         self.ax.add_patch(Rectangle((-10, 70.5), 40, q_len, color=queue_color, alpha=0.3, zorder=1))
         
-        # S Queue Area (on road x=30 to 70, below y=-10)
+        # S Queue Area (x=30 to 70, below y=-10)
         self.ax.add_patch(Rectangle((30, -10.5 - q_len), 40, q_len, color=queue_color, alpha=0.3, zorder=1))
         
-        # E Queue Area (on road y=30 to 70, right of x=70)
+        # E Queue Area (y=30 to 70, right of x=70)
         self.ax.add_patch(Rectangle((70.5, 30), q_len, 40, color=queue_color, alpha=0.3, zorder=1))
         
-        # W Queue Area (on road y=-10 to 30, left of x=-10)
+        # W Queue Area (y=-10 to 30, left of x=-10)
         self.ax.add_patch(Rectangle((-10.5 - q_len, -10), q_len, 40, color=queue_color, alpha=0.3, zorder=1))
-        # --- END QUEUE BOXES ---
+
 
         # --- Draw Faint Trajectories ---
         if self.geom_for_drawing:
             try:
                 traj_colors = {'S': '#00FFFF', 'L': '#FF00FF', 'R': '#00FF00'} # Cyan, Magenta, Green
-                # The Vehicle class needs to be defined for this to work
                 if 'Vehicle' in globals():
                     dummy_v = Vehicle(vehicle_id=0, approach='N', maneuver='S', priority_status=False, velocity=(0,0))
-                else:
-                    print("Skipping trajectory draw: Vehicle class not available.")
-                    return
+                else: return
                 
                 for approach in ['N', 'E', 'S', 'W']:
                     for maneuver in ['S', 'L', 'R']:
@@ -484,7 +471,6 @@ class IntersectionVisualization:
                         self.geom_for_drawing.set_trajectory(dummy_v)
                         
                         if dummy_v.path:
-                            # This will now *always* get a path from the base S_ point
                             coords = get_trajectory_coords(dummy_v, dummy_v.path)
                             if coords and len(coords) >= 2:
                                 x_coords, y_coords = zip(*coords)
@@ -494,40 +480,49 @@ class IntersectionVisualization:
                 print(f"Warning: Could not draw trajectories - {e}")
         
         # --- Draw Conflict Points ---
-        # (These are unchanged, they are absolute coordinates)
         for name, (x, y) in POINT_COORDINATES.items():
             if 'S_' not in name and 'M_' not in name:
                 self.ax.plot(x, y, 'o', color='#FFFFE0', markersize=3, alpha=0.5, zorder=2)
                 
-        # --- NEW Labels and Arrows ---
-        # Center arrows on the new road inlets
+        # --- Labels and Arrows (Showing Directions) ---
         arrow_props = dict(facecolor='white', edgecolor='none', width=0.5, head_width=2.5, head_length=2.5, zorder=2)
         text_props = dict(color='white', fontsize=10, ha='center', va='center')
         
-        # North Approach (Center of x=-10 to 30 inlet is x=10)
+        # N Approach (centerline x=0, x=20)
         self.ax.text(10, 90, "NORTH (In)", **text_props)
         self.ax.arrow(10, 85, 0, -10, **arrow_props) 
         
-        # South Approach (Center of x=30 to 70 inlet is x=50)
-        self.ax.text(50, -40, "SOUTH (In)", **text_props)
-        self.ax.arrow(50, -35, 0, 10, **arrow_props) 
-        
-        # East Approach (Center of y=30 to 70 inlet is y=50)
+        # E Approach (centerline y=60, y=40)
         self.ax.text(90, 50, "EAST (In)", rotation=-90, **text_props)
         self.ax.arrow(85, 50, -10, 0, **arrow_props)
         
-        # West Approach (Center of y=-10 to 30 inlet is y=10)
+        # S Approach (centerline x=60, x=40)
+        self.ax.text(50, -40, "SOUTH (In)", **text_props)
+        self.ax.arrow(50, -35, 0, 10, **arrow_props) 
+        
+        # W Approach (centerline y=0, y=20)
         self.ax.text(-30, 10, "WEST (In)", rotation=90, **text_props)
         self.ax.arrow(-35, 10, 10, 0, **arrow_props)
-        # --- END LABEL ---
-        
-        # --- Add Legend for Trajectories ---
-        legend_patches = [
-            Patch(color='#00FFFF', label='Straight Path'),
-            Patch(color='#FF00FF', label='Left Turn Path'),
-            Patch(color='#00FF00', label='Right Turn Path')
+
+        # --- Legend for Vehicle Colors (Approach/Emergency) ---
+        color_legend_patches = [
+             Patch(color=self.EMERGENCY_COLOR, label='Emergency (RED)'),
+             Patch(color=self.APPROACH_COLORS['N'], label='N Approach (BLUE)'),
+             Patch(color=self.APPROACH_COLORS['E'], label='E Approach (YELLOW)'),
+             Patch(color=self.APPROACH_COLORS['S'], label='S Approach (GREEN)'),
+             Patch(color=self.APPROACH_COLORS['W'], label='W Approach (PINK)')
         ]
-        self.ax.legend(handles=legend_patches, loc='lower right', fontsize='small')
+        
+        # Combine Path Legend and Color Legend
+        path_legend_patches = [
+             Patch(color='#00FFFF', label='Straight Path'),
+             Patch(color='#FF00FF', label='Left Turn Path'),
+             Patch(color='#00FF00', label='Right Turn Path')
+        ]
+        
+        # Create a single legend using handles
+        all_legend_handles = path_legend_patches + color_legend_patches
+        self.ax.legend(handles=all_legend_handles, loc='lower right', fontsize='small', ncol=2)
         
         self.ax.axis('off')
 
@@ -543,19 +538,14 @@ class IntersectionVisualization:
 
         try:
             geom = Geometry()
-            # The Vehicle class needs to be defined for this to work
             if 'Vehicle' in globals():
                  geom.create_entry_queue(config.pi)
             
-            # geometry.entry_queues should be dict approach -> list of vehicle objects (or ids)
             for approach, q_list in geom.entry_queues.items():
                 if approach in queues:
-                    # q_list could be Vehicle objects or IDs depending on your Geometry implementation
-                    # Normalize to IDs:
                     ids = [getattr(v, 'id', v) for v in q_list]
                     queues[approach] = ids
         except Exception as e:
-            # Fallback to best-effort ordering from config.pi if Geometry not available
             print(f"Warning: Geometry.create_entry_queue failed: {e}. Falling back to config.pi ordering.")
             for v_cfg in config.pi:
                 if v_cfg.approach in queues:
