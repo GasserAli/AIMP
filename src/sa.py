@@ -210,7 +210,7 @@ def plot_results(history_data):
 
 
 def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
-           iter_per_temp=MAX_ITER_PER_TEMP, max_iter=MAX_TOTAL_ITERATIONS):
+           iter_per_temp=MAX_ITER_PER_TEMP, max_iter=MAX_TOTAL_ITERATIONS, animation_enabled=False):
     """Main Simulated Annealing (SA) algorithm."""
     print("--- Starting Simulated Annealing ---")
 
@@ -334,15 +334,17 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
 if __name__ == "__main__":
     perm_best, speeds_best, _ = run_sa()
     visualizer = IntersectionVisualization()
-    visualizer.start()  # Start the visualization server
-    for vehicle, speed in zip(perm_best, speeds_best):
-        vehicle.velocity = round(speed, 2)
-    # Test the visualization with a single update of the vehicles
-    visualizer.update_vehicles(vehicles=perm_best, permutation=[v.id for v in perm_best])
-    visualizer.start_simulation()
-    import time
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\nShutting down visualization server...")
+
+    #Visualizer server code 
+    # visualizer.start()  # Start the visualization server
+    # for vehicle, speed in zip(perm_best, speeds_best):
+    #     vehicle.velocity = round(speed, 2)
+    # # Test the visualization with a single update of the vehicles
+    # visualizer.update_vehicles(vehicles=perm_best, permutation=[v.id for v in perm_best])
+    # visualizer.start_simulation()
+    # import time
+    # try:
+    #     while True:
+    #         time.sleep(1)
+    # except KeyboardInterrupt:
+    #     print("\nShutting down visualization server...")

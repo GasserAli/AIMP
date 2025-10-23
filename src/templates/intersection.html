@@ -423,6 +423,7 @@
                     };
                 })
                 .on('end', function() {
+                    //TODO: add edge case for when path is 1 point only so that it exits correctly 
                     // snap to final intersection point
                     const last = points[points.length-1];
                     circle.attr('cx', last.x).attr('cy', last.y);
