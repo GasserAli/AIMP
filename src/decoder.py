@@ -1,155 +1,227 @@
-from dataclasses import dataclass
-from typing import List, Dict, Tuple
+# File: decoder.py
+import config
+from geometry import Geometry
+import math
+from typing import List, Dict, Tuple, Union
 
+# Define Vehicle type hint if not imported directly (for clarity)
+# If Vehicle class is in vehicle.py, uncomment the line below
+from vehicle import Vehicle
 
-@dataclass
-class Vehicle:
-    Vid: int
-    Approach: str  # 'N','S','E','W'
-    Maneuver: str  # 'S','L','R'
-    velocity: float  # m/s
-    path: List[str]  # list of conflict point ids (e.g., ['C1','C9','Mn'])
-
-
-from typing import Union
-
-
-def is_permutation_valid(
-    permutation: List[Vehicle],
-    distance_to_first_conflict: Union[Dict[int, float], float],
-    inter_conflict_distance: Union[Dict[Tuple[str, str], float], float],
-    safety_time: float,
-    queue_spacing: float = 10.0,
-) -> Tuple[bool, int]:
-    """Return True if the permutation is valid (no two vehicles enter same conflict
-    point within safety_time), False otherwise.
-
-    Parameters
-    - permutation: list of Vehicle objects in the order they'll traverse the intersection
-    - distance_to_first_conflict: mapping from vehicle.Vid -> distance (meters) from
-      the vehicle's queue start to the first conflict point in its path
-    - inter_conflict_distance: mapping from (conflict_i, conflict_j) -> distance (meters)
-      between consecutive conflict points along the vehicle's path. If consecutive points
-      are the same key, distance should be 0.
-    - safety_time: extra time buffer (seconds) that must separate entries into the same conflict
-
-    Assumptions
-    - Each vehicle travels its path at the constant speed `velocity`.
-    - path is ordered list of conflict point ids the vehicle will traverse in sequence.
-    - inter_conflict_distance provides distances for consecutive pairs present in any vehicle.path.
+def run_decoder(permutation: List['Vehicle'],
+                speeds: List[float],
+                geom: Geometry, # Needs original queues for t_ear calc
+                tau_p_dict: Dict[str, float],
+                return_full_schedule: bool = False):
     """
-    # Initialize conflict count
-    count_conflicts = 0
-    
+    Implements a realistic scheduling decoder based on Algorithm 1 logic,
+    incorporating queue spacing for t_ear and inter-conflict travel time.
 
-    # First: group vehicles by approach (queue order is the order they appear in permutation)
-    approaches: Dict[str, List[Vehicle]] = {}
-    for veh in permutation:
-        approaches.setdefault(veh.Approach, []).append(veh)
-    # print(approaches)
+    Calculates delays correctly considering cascading effects.
 
-    # Enforce queue speed constraint: following vehicle must not be faster than the vehicle ahead
-    for approach, vehs in approaches.items():
-        for i in range(1, len(vehs)):
-            v_ahead = vehs[i - 1].velocity
-            v_follow = vehs[i].velocity
-            if v_follow > v_ahead + 1e-9:
-                # Following vehicle is faster than the vehicle ahead in the same queue -> invalid
-                return (False, -1)
+    Parameters:
+    - permutation (List[Vehicle]): Current order of vehicles to consider.
+    - speeds (List[float]): List of speeds corresponding to vehicles in the permutation.
+    - geom (Geometry): Geometry object with original queues (based on config.pi).
+    - tau_p_dict (Dict[str, float]): Headway time required at each conflict point.
+    - return_full_schedule (bool): If True, returns detailed schedule besides delays.
 
-    # Map conflict point -> list of (vehicle id, arrival_time)
-    conflict_arrivals: Dict[str, List[Tuple[int, float]]] = {}
+    Returns:
+    - If False: decoder_results (List[dict]) - List of {'id', 'delay', 'is_emergency'}.
+    - If True: (decoder_results, scheduled_times, t_ear)
+    """
 
-    # We'll compute per-vehicle distance to first conflict. If distance_to_first_conflict is
-    # a scalar it represents the distance for the front vehicle in each queue; subsequent
-    # vehicles in the same queue are placed further back by `queue_spacing` meters each.
-    # If a dict is provided, its values are used directly for each vehicle (assumed consistent).
+    # --- 1. Initialization ---
+    t_ear = {}            # Earliest arrival time at the *first* conflict point for each vehicle
+    scheduled_times = {}  # {v_id: {point: arrival_time}}
+    path_pointers = {}    # {v_id: index_in_path}
+    vehicle_state = {}    # {v_id: 'WAITING', 'RUNNING', 'FINISHED'}
+    # A[p]: Time when conflict point 'p' becomes free
+    availability_clocks = {p: 0.0 for p in tau_p_dict.keys()}
 
-    # Prepare per-vehicle d0 mapping when scalar is used
-    per_vehicle_d0: Dict[int, float] = {}
-    if not isinstance(distance_to_first_conflict, dict):
-        base_d0 = float(distance_to_first_conflict)
-        # For each approach, assign d0 for vehicles in queue order (front -> back)
-        for approach, vehs in approaches.items():
-            for idx, veh in enumerate(vehs):
-                per_vehicle_d0[veh.Vid] = base_d0 + idx * float(queue_spacing)
+    # Use the passed-in geom object, assumed to have queues based on config.pi
+    geom_init = geom
 
-    for veh in permutation:
-        if len(veh.path) == 0:
-            continue
+    # Map vehicle IDs to speeds for quick lookup
+    speeds_dict = {p.id: s for p, s in zip(permutation, speeds)}
 
-        # distance from queue start to first conflict
-        if isinstance(distance_to_first_conflict, dict):
-            d0 = distance_to_first_conflict.get(veh.Vid, None)
-            if d0 is None:
-                raise ValueError(f"distance_to_first_conflict missing for vehicle {veh.Vid}")
-        else:
-            d0 = per_vehicle_d0.get(veh.Vid, None)
-            if d0 is None:
-                # fallback: use base value
-                d0 = float(distance_to_first_conflict)
+    # --- 2. Calculate Realistic t_ear (Earliest Arrival at First Point) ---
+    d0 = 10.0 # meters (Distance for queue leader to reach first conflict point)
+              # TODO: Make d0 configurable
 
-        # time to reach first conflict
-        t = d0 / max(veh.velocity, 1e-3)
-        print(f"Vehicle {veh.Vid} arrives at first conflict {veh.path[0]} at time {t:.2f}s")
+    for queue in geom_init.entry_queues.values():
+        if not queue: continue
 
+        last_t_ear = -math.inf # Initialize for the first vehicle in the queue
 
-        # record arrival to first conflict
-        first_conf = veh.path[0]
-        conflict_arrivals.setdefault(first_conf, []).append((veh.Vid, t))
+        for idx, v in enumerate(queue):
+            # Only calculate for vehicles present in the current solution permutation
+            if v.id not in speeds_dict: continue
 
-        # walk through subsequent conflicts
-        for i in range(1,len(veh.path) - 1):
-            a = veh.path[i]
-            b = veh.path[i + 1]
-            # inter_conflict_distance can be a dict or a scalar (same distance between any pair)
-            if isinstance(inter_conflict_distance, dict):
-                key = (a, b)
-                d = inter_conflict_distance.get(key, None)
-                if d is None:
-                    # try symmetric key
-                    d = inter_conflict_distance.get((b, a), None)
-                if d is None:
-                    raise ValueError(f"inter_conflict_distance missing for pair {a}->{b}")
+            vehicle_speed = speeds_dict[v.id]
+            safe_speed = max(vehicle_speed, 1e-6) # Avoid division by zero
+
+            if idx == 0:
+                # Leader of the queue: time = distance / speed
+                current_t_ear = d0 / safe_speed
             else:
-                d = float(inter_conflict_distance)
+                # Follower: Arrives after leader + time gap due to physical spacing
+                # Time gap = physical distance / follower's speed
+                time_gap = config.safety_distance / safe_speed
+                # Based on distance offset logic, converted to time offset
+                current_t_ear = last_t_ear + time_gap
 
-            dt = d / max(veh.velocity, 1e-3)
-            t += dt
-            conflict_arrivals.setdefault(b, []).append((veh.Vid, t))
-            print(f"Vehicle {veh.Vid} arrives at conflict {a} at time {t:.2f}s")
+            t_ear[v.id] = current_t_ear
+            last_t_ear = current_t_ear # Update for the next follower
+
+    # --- 3. Initialize Decoder State for vehicles in the current permutation ---
+    num_vehicles_in_solution = 0
+    for v in permutation:
+        if v.id in speeds_dict: # Ensure vehicle is part of the current solution
+            num_vehicles_in_solution += 1
+            path_pointers[v.id] = 0
+            # Mark as FINISHED if t_ear couldn't be calculated (e.g., vehicle not in original queue)
+            vehicle_state[v.id] = 'WAITING' if v.id in t_ear else 'FINISHED'
+            scheduled_times[v.id] = {}
+
+    # --- 4. Dynamic Scheduling Loop (Iterative based on dependencies) ---
+    num_finished = sum(1 for v_id, state in vehicle_state.items() if state == 'FINISHED')
+    # Start loop with vehicles that are part of the solution and not already finished
+    active_vehicles_ids = {v.id for v in permutation if vehicle_state.get(v.id) == 'WAITING'}
+
+    # Safety counter to prevent infinite loops in case of true deadlock
+    loop_limit = num_vehicles_in_solution * max((len(v.path) for v in permutation if v.path and v.id in speeds_dict), default=1) * 2
+    loop_count = 0
+
+    while num_finished < num_vehicles_in_solution and loop_count < loop_limit: # Stop when all vehicles in solution are finished
+
+        made_progress_this_iteration = False # Flag to detect stalls
+        processed_vehicle_ids = set() # Track vehicles processed in this loop pass
+
+        # Process vehicles based on their order in the current permutation
+        for v in permutation:
+            v_id = v.id
+            # Skip if not in solution, already finished, or not ready to be processed yet
+            if v_id not in active_vehicles_ids or vehicle_state.get(v_id) == 'FINISHED':
+                continue
+
+            processed_vehicle_ids.add(v_id) # Mark as considered in this pass
+
+            path_idx = path_pointers.get(v_id, 0)
+
+            # Check if vehicle path is complete
+            if path_idx >= len(v.path):
+                if vehicle_state.get(v_id) != 'FINISHED':
+                    vehicle_state[v_id] = 'FINISHED'; num_finished += 1; made_progress_this_iteration = True
+                continue # Finished
+
+            p = v.path[path_idx] # Current conflict point target
+
+            # Safety check: ensure point 'p' is valid and has a headway time defined
+            if p not in tau_p_dict:
+                if vehicle_state.get(v_id) != 'FINISHED':
+                    vehicle_state[v_id] = 'FINISHED'; num_finished += 1; made_progress_this_iteration = True
+                continue
+
+            tau = tau_p_dict[p] # Headway required at point 'p'
+
+            # --- Calculate Earliest Reach Time (t_reach) for point 'p' ---
+            if path_idx == 0:
+                # First point: earliest reach is t_ear
+                t_reach = t_ear.get(v_id, math.inf) # Use infinity if t_ear is missing
+            else:
+                # Subsequent points: earliest reach depends on previous point's departure + travel time
+                p_prev = v.path[path_idx - 1]
+
+                # Check if the previous point has been scheduled yet
+                if p_prev not in scheduled_times.get(v_id, {}):
+                    # Cannot schedule 'p' yet, must process p_prev first. Skip for now.
+                    continue # Try scheduling this vehicle's point 'p' in the next iteration
+
+                tau_prev = tau_p_dict.get(p_prev, config.tau)
+                t_prev_departure = scheduled_times[v_id][p_prev] + tau_prev
+
+                # *** MODIFICATION START ***
+                # Calculate travel time from p_prev to p using config parameter
+                distance = config.inter_conflict_distance # Assumes uniform distance
+                speed = speeds_dict.get(v_id, 1e-6)
+                travel_time = distance / max(speed, 1e-6)
+                # *** MODIFICATION END ***
+
+                t_reach = t_prev_departure + travel_time # ADDED travel_time here
+
+            # --- Determine Scheduled Time (t_scheduled) ---
+            t_available = availability_clocks[p] # When point 'p' becomes free
+            t_scheduled = max(t_reach, t_available) # Vehicle waits if point busy or hasn't arrived
+
+            # --- Update State ---
+            scheduled_times.setdefault(v_id, {})[p] = t_scheduled
+            availability_clocks[p] = t_scheduled + tau # Point 'p' is now busy until departure
+            path_pointers[v_id] = path_idx + 1 # Advance vehicle to next point
+            vehicle_state[v_id] = 'RUNNING'
+            made_progress_this_iteration = True # We successfully scheduled a point
+
+        # Update the set of active vehicles for the next pass
+        active_vehicles_ids = {v_id for v_id, state in vehicle_state.items() if state == 'WAITING' or state == 'RUNNING'}
+        loop_count += 1
+
+        # Safety break: If a full pass makes no progress among active vehicles, declare deadlock/penalty
+        if not made_progress_this_iteration and num_finished < num_vehicles_in_solution:
+             stuck_vehicles_count = 0
+             for v_id_check in active_vehicles_ids:
+                 if v_id_check in processed_vehicle_ids:
+                     stuck_vehicles_count += 1
+                     if vehicle_state.get(v_id_check) != 'FINISHED':
+                         if v_id_check not in t_ear: t_ear[v_id_check] = 0
+                         scheduled_times.setdefault(v_id_check, {})['__PENALTY__'] = math.inf
+                         vehicle_state[v_id_check] = 'FINISHED'
+                         num_finished += 1
+             if stuck_vehicles_count > 0: break
 
 
-    # Now check each conflict point for temporal collisions
-    for cp, arrivals in conflict_arrivals.items():
-        print(arrivals)
-        # sort arrivals by time
-        arrivals.sort(key=lambda x: x[1])
-        for i in range(len(arrivals) - 1):
-            t_curr = arrivals[i][1]
-            t_next = arrivals[i + 1][1]
-            if t_next - t_curr < safety_time:
-                count_conflicts += 1
-                permutation[i+1].set_delay(t_next-t_curr)
-                print(f"Conflict point {cp} has vehicles {arrivals[i][0]} and {arrivals[i+1][0]} too close: {t_next - t_curr:.2f}s apart")
-                # conflict detected
-                
+    # --- 5. Calculate Final Delays ---
+    decoder_results = []
 
-    return (count_conflicts == 0, count_conflicts)
+    # Iterate through the original permutation to ensure order matches SA
+    for v in permutation:
+        if v.id not in speeds_dict: continue # Only process vehicles in the current solution
 
+        delay = 0.0 # Default delay
 
-if __name__ == '__main__':
-    # Simple unit test
-    velocity = 10
-    v1 = Vehicle(1, 'E', 'L', velocity=velocity, path=['C7', 'C9','C10','C14', 'Ms'])
-    v2 = Vehicle(2, 'E', 'S', velocity=velocity, path=['C4', 'C3','C2', 'C1','Mw'])
-    v3 = Vehicle(3, 'N', 'L', velocity=velocity, path=['C2', 'C6','C7', 'C12','Me'])
-    v4 = Vehicle(4, 'N', 'L', velocity=velocity, path=['C2', 'C6','C7', 'C12','Me'])
+        # Handle penalized vehicles
+        if scheduled_times.get(v.id, {}).get('__PENALTY__') == math.inf:
+             delay = 9999.0
+        elif v.id not in t_ear: # Handle vehicles that never started properly
+             delay = 9999.0
+        elif not v.path: # Handle vehicles with empty paths
+            delay = 0.0
+        else:
+            # Calculate Free-Flow Time (t_free) including travel time
+            path_headway_sum = sum(tau_p_dict.get(p, config.tau) for p in v.path)
+            num_segments = len(v.path) - 1 # Number of inter-point movements
 
+            # *** MODIFICATION START ***
+            # Include free-flow travel time calculation
+            free_flow_travel = num_segments * config.inter_conflict_distance / max(speeds_dict.get(v.id, 1e-6), 1e-6) if num_segments > 0 else 0
+            t_free = t_ear[v.id] + path_headway_sum + free_flow_travel
+            # *** MODIFICATION END ***
 
-    perm = [v1, v2, v3, v4]
-    # Use scalar distances (same for all vehicles and conflict hops)
-    d0 = 10.0  # meters to first conflict for all vehicles
-    inter = 10.0  # meters between consecutive conflict points for all hops
+            # Calculate Actual Exit Time (t_exit)
+            last_p = v.path[-1]
+            if last_p not in scheduled_times.get(v.id, {}):
+                 delay = 9999.0 # High penalty if path not completed
+            else:
+                t_exit = scheduled_times[v.id][last_p] + tau_p_dict.get(last_p, config.tau)
+                delay = max(0.0, t_exit - t_free)
 
-    print('Permutation valid?', is_permutation_valid(perm, d0, inter, safety_time=3))
+        decoder_results.append({
+            "id": v.id,
+            "delay": delay,
+            "is_emergency": v.priority_status
+        })
+
+    # --- 6. Return Data ---
+    if return_full_schedule:
+        return decoder_results, scheduled_times, t_ear
+    else:
+        return decoder_results

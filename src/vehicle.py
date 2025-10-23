@@ -1,11 +1,11 @@
 # File: vehicle.py
 
 class Vehicle:
-    def __init__(self, vehicle_id, approach, maneuver, priority_status, velocity, delay):
+    def __init__(self, vehicle_id, approach, maneuver, priority_status, velocity, delay=0.0):
         """
         Initializes a Vehicle object.
         """
-        self.vehicle_id = vehicle_id
+        self.id = vehicle_id
         self.approach = approach      # "N", "E", "S", or "W"
         self.maneuver = maneuver      # "S", "L", or "R"
         self.priority_status = priority_status

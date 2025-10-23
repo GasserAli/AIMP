@@ -1,93 +1,63 @@
-import numpy
+# File: objective.py
+import config
 
-class Vehicle:
-    def __init__(self, vid, path, times, tear, is_emergency=False):
-        """
-        Parameters
-        ----------
-        vid : int
-            Vehicle ID.
-        path : list[str]
-            List of conflict points (e.g. ['C1','C5','MN']).
-        times : dict[str, float]
-            Time when the vehicle passes each conflict point.
-        tear : float
-            Earliest arrival time at first conflict point.
-        is_emergency : bool
-            True if this vehicle is an emergency vehicle.
-        """
-        self.id = vid
-        self.path = path
-        self.times = times
-        self.tear = tear
-        self.is_emergency = is_emergency
-
-    def exit_time(self, tau):
-        """Compute exit time (last conflict point time + headway)."""
-        last_p = self.path[-1]
-        return self.times[last_p] + tau[last_p]
-
-    def free_time(self, tau):
-        """Compute free-flow exit time (if there were no delays)."""
-        return self.tear + sum(tau[p] for p in self.path)
-
-    def delay(self, tau):
-        """Delay = actual exit - free-flow exit."""
-        return max(0.0, self.exit_time(tau) - self.free_time(tau))
-
-
-def objective_from_queues(queues, tau, alpha=1.0, beta=1.0):
+def calculate_objective(decoder_results):
     """
-    Compute the total and weighted delay for 4 queues of Vehicle objects.
+    Computes the weighted objective from a simple list of delay results.
+    This function implements the objective function from your report.
 
     Parameters
     ----------
-    queues : dict[str, list[Vehicle]]
-        Dictionary with keys ['N','E','S','W'] each containing a list of Vehicle objects.
-    tau : dict[str, float]
-        Headway times for each conflict point.
-    alpha, beta : float
-        Weights for emergency and total delays.
-
+    decoder_results : list[dict]
+        A list of dictionaries. This is the *OUTPUT* of the Decoder.
+        Each dictionary must be:
+        {"id": int, "delay": float, "is_emergency": bool}
+    
     Returns
     -------
     dict : {"delays", "fem", "fall", "f"}
+        A dictionary containing the final calculated objective values.
     """
+    # Get weights directly from the config file
+    alpha = config.alpha
+    beta = config.beta
 
-    all_vehicles = [v for q in queues.values() for v in q]
-    delays = {v.id: v.delay(tau) for v in all_vehicles}
+    # Create a dictionary of {vehicle_id: delay}
+    delays = {r["id"]: r["delay"] for r in decoder_results}
 
-    fem = sum(v.delay(tau) for v in all_vehicles if v.is_emergency)
+    # fem = sum of delays for emergency vehicles
+    fem = sum(r["delay"] for r in decoder_results if r["is_emergency"])
+    
+    # fall = sum of delays for all vehicles
     fall = sum(delays.values())
+    
+    # f = weighted objective function
     f = alpha * fem + beta * fall
 
     return {"delays": delays, "fem": fem, "fall": fall, "f": f}
 
 
+# --- Test Block ---
 if __name__ == "__main__":
-    # Headway times
-    tau = {p: 1.0 for p in ['C1','C2','C3','C4','C5','C6','C7','C8','MN','ME','MS','MW']}
+    
+    print("--- Testing Decoupled Objective Function ---")
 
-    # Define 4 queues
-    north_queue = [
-        Vehicle(1, ['C1','C5','MN'], {'C1':0, 'C5':1, 'MN':2}, tear=0, is_emergency=True)
-    ]
-    east_queue = [
-        Vehicle(2, ['C2','C6','ME'], {'C2':1, 'C6':2, 'ME':3}, tear=0)
-    ]
-    south_queue = [
-        Vehicle(3, ['C3','C7','MS'], {'C3':2, 'C7':3, 'MS':4}, tear=1)
-    ]
-    west_queue = [
-        Vehicle(4, ['C4','C8','MW'], {'C4':3, 'C8':4, 'MW':5}, tear=2)
+    # This is a MOCK (simulated) output from a Decoder.
+    mock_decoder_output = [
+        {"id": 1, "delay": 0.0, "is_emergency": True},
+        {"id": 2, "delay": 1.0, "is_emergency": False},
+        {"id": 3, "delay": 1.0, "is_emergency": False}
     ]
 
-    queues = {'N': north_queue, 'E': east_queue, 'S': south_queue, 'W': west_queue}
+    print(f"Simulated Decoder output: {mock_decoder_output}")
 
-    result = objective_from_queues(queues, tau, alpha=2.0, beta=1.0)
+    # Run the objective function
+    result = calculate_objective(mock_decoder_output)
 
-    print("\n=== Objective Function Test with Queues ===")
+    # Print the final results
+    print("\n=== Objective Function Test Results ===")
     print("Delays:", result["delays"])
     print("Emergency delay (fem):", result["fem"])
     print("Total delay (fall):", result["fall"])
-    print("Weighted objective (f):", result["f"])
+    print(f"Weighted objective (f):", result["f"])
+    print(f"(Based on config: alpha={config.alpha}, beta={config.beta})")
