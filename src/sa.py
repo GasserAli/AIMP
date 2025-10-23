@@ -333,7 +333,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
 
 if __name__ == "__main__":
     perm_best, speeds_best, _ = run_sa()
-    visualizer = IntersectionVisualizer()
+    visualizer = IntersectionVisualization()
     visualizer.start()  # Start the visualization server
     for vehicle, speed in zip(perm_best, speeds_best):
         vehicle.velocity = round(speed, 2)
