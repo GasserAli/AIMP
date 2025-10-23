@@ -250,99 +250,114 @@ class VehicleAnimator:
         self.set_position(0.0)
 
     def build_key_frames(self, t_ear, schedule, tau_p_dict):
-        """Builds (time, distance) keyframes from the schedule, respecting queue offset."""
-        if not self.path_names or len(self.trajectory_coords) < 2:
-            return
+            """Builds (time, distance) keyframes from the schedule, respecting queue offset and smoothing movement."""
+            if not self.path_names or len(self.trajectory_coords) < 2:
+                return
 
-        # Start with the vehicle's position BEFORE the queue is resolved.
-        # This initial keyframe correctly sets the car at its negative distance (queue position).
-        self.key_frames = [(0.0, -self.queue_offset)]
+            # Start with the vehicle's position BEFORE the queue is resolved.
+            self.key_frames = [(0.0, -self.queue_offset)]
 
-        safe_speed = max(self.speed, 1e-6)
-        
-        # CRITICAL FIX: The distance the vehicle needs to travel to reach the start line (distance 0)
-        # is simply its queue offset.
-        distance_to_start_line = self.queue_offset 
-        time_to_travel_to_start = distance_to_start_line / safe_speed if safe_speed > 1e-6 else 0.0
+            safe_speed = max(self.speed, 1e-6)
+            
+            # The distance the vehicle needs to travel to reach the start line (distance 0)
+            distance_to_start_line = self.queue_offset 
+            time_to_travel_to_start = distance_to_start_line / safe_speed if safe_speed > 1e-6 else 0.0
 
-        # determine time when vehicle reaches S point (distance 0)
-        physical_arrival_time = self.key_frames[0][0] + time_to_travel_to_start 
+            # determine time when vehicle reaches S point (distance 0)
+            physical_arrival_time = self.key_frames[0][0] + time_to_travel_to_start 
 
-        # The actual time at S_point is the later of: 
-        # 1. When it physically gets there based on queue position (physical_arrival_time)
-        # 2. When it is scheduled to be ready to go (t_ear).
-        time_at_S_point = max(physical_arrival_time, t_ear)
-        time_at_S_point = max(time_at_S_point, self.key_frames[0][0] + 1e-6)
-        
-        # Append the keyframe for the arrival at the start point (distance 0.0)
-        self.key_frames.append((time_at_S_point, 0.0))
+            # The actual time at S_point is the later of: 
+            # 1. When it physically gets there based on queue position (physical_arrival_time)
+            # 2. When it is scheduled to be ready to go (t_ear).
+            time_at_S_point = max(physical_arrival_time, t_ear)
+            time_at_S_point = max(time_at_S_point, self.key_frames[0][0] + 1e-6)
+            
+            # Append the keyframe for the arrival at the start point (distance 0.0)
+            self.key_frames.append((time_at_S_point, 0.0))
 
-        last_scheduled_time_kf = time_at_S_point
+            last_scheduled_time_kf = time_at_S_point
+            last_scheduled_dist_kf = 0.0 # Vehicle starts at distance 0.0 after queueing
 
-        # Add scheduled arrivals/departures for each named point in path_names
-        for i, point_name in enumerate(self.path_names):
-            if point_name in schedule:
-                
-                current_dist_name_match = -1
-                # Search for the point's coordinate in the final generated trajectory list
-                if point_name in POINT_COORDINATES:
-                    coord_to_find = POINT_COORDINATES[point_name]
-                    for j, coord in enumerate(self.trajectory_coords):
-                        if tuple(np.round(coord, 8)) == tuple(np.round(coord_to_find, 8)):
-                             current_dist_name_match = self.cumulative_distances[j]
-                             break
-                
-                if current_dist_name_match == -1: continue 
+            # Add scheduled arrivals/departures for each named point in path_names
+            for i, point_name in enumerate(self.path_names):
+                if point_name in schedule:
+                    
+                    current_dist_name_match = -1
+                    # Search for the point's coordinate in the final generated trajectory list
+                    if point_name in POINT_COORDINATES:
+                        coord_to_find = POINT_COORDINATES[point_name]
+                        for j, coord in enumerate(self.trajectory_coords):
+                            if tuple(np.round(coord, 8)) == tuple(np.round(coord_to_find, 8)):
+                                current_dist_name_match = self.cumulative_distances[j]
+                                break
+                    
+                    if current_dist_name_match == -1: continue 
 
-                current_dist = current_dist_name_match 
+                    current_dist = current_dist_name_match 
+                    t_arrival = float(schedule[point_name])
+                    t_departure = t_arrival + float(tau_p_dict.get(point_name, config.tau))
+                    
+                    # --- FIX FOR TELEPORTATION: INSERT INTERMEDIATE POINT ---
+                    # Calculate time needed to cover distance at max speed
+                    dist_diff = current_dist - last_scheduled_dist_kf
+                    time_at_max_speed = dist_diff / safe_speed if safe_speed > 1e-6 else 0.0
+                    
+                    # Calculate the earliest possible time to reach this point
+                    t_earliest_arrival = last_scheduled_time_kf + time_at_max_speed
 
-                t_arrival = float(schedule[point_name])
-                # ensure strictly increasing times
-                t_arrival = max(t_arrival, last_scheduled_time_kf + 1e-6)
-                t_departure = t_arrival + float(tau_p_dict.get(point_name, config.tau))
+                    # If scheduled arrival is significantly later than earliest arrival, 
+                    # insert a keyframe at the point of max speed/constant travel to smooth the path.
+                    if t_arrival > t_earliest_arrival + 0.1: # Use 0.1s buffer for smoothing
+                        # Insert a keyframe at the earliest possible arrival time
+                        self.key_frames.append((t_earliest_arrival, current_dist))
+                        last_scheduled_time_kf = t_earliest_arrival
+                    
+                    # The arrival time must be strictly non-decreasing
+                    t_arrival = max(t_arrival, last_scheduled_time_kf + 1e-6)
 
-                # arrival keyframe
-                self.key_frames.append((t_arrival, current_dist))
-                # departure keyframe (if dwell)
-                if t_departure > t_arrival + 1e-6:
-                    self.key_frames.append((t_departure, current_dist))
-                last_scheduled_time_kf = max(last_scheduled_time_kf, t_departure)
+                    # arrival keyframe
+                    self.key_frames.append((t_arrival, current_dist))
+                    # departure keyframe (if dwell)
+                    if t_departure > t_arrival + 1e-6:
+                        self.key_frames.append((t_departure, current_dist))
+                    
+                    last_scheduled_time_kf = max(last_scheduled_time_kf, t_departure)
+                    last_scheduled_dist_kf = current_dist # Update the last distance
 
-        # Ensure there's a keyframe that reaches the final coordinate of the path
-        final_coord_index = len(self.trajectory_coords) - 1
-        final_dist = self.cumulative_distances[final_coord_index] if final_coord_index < len(self.cumulative_distances) else None
+            # Ensure there's a keyframe that reaches the final coordinate of the path
+            final_coord_index = len(self.trajectory_coords) - 1
+            final_dist = self.cumulative_distances[final_coord_index] if final_coord_index < len(self.cumulative_distances) else None
 
-        if final_dist is not None:
-            # If last recorded distance is less than final_dist, add a linear travel keyframe
-            last_time, last_dist = self.key_frames[-1]
-            if final_dist > last_dist + 1e-6:
-                dist_to_final = final_dist - last_dist
-                # Guarantee a positive travel time (avoid division by zero / instantaneous teleport)
-                time_needed = dist_to_final / safe_speed if safe_speed > 1e-9 else dist_to_final / (1e-3)
-                arrival_to_final_time = last_time + max(time_needed, 0.05)  # at least 50ms travel
-                # If arrival would be earlier than previous time (shouldn't), force monotonicity:
-                arrival_to_final_time = max(arrival_to_final_time, last_time + 1e-6)
-                self.key_frames.append((arrival_to_final_time, final_dist))
+            if final_dist is not None:
+                # If last recorded distance is less than final_dist, add a linear travel keyframe
+                last_time, last_dist = self.key_frames[-1]
+                if final_dist > last_dist + 1e-6:
+                    dist_to_final = final_dist - last_dist
+                    # Guarantee a positive travel time (avoid division by zero / instantaneous teleport)
+                    time_needed = dist_to_final / safe_speed if safe_speed > 1e-9 else dist_to_final / (1e-3)
+                    arrival_to_final_time = last_time + max(time_needed, 0.05)  # at least 50ms travel
+                    # If arrival would be earlier than previous time (shouldn't), force monotonicity:
+                    arrival_to_final_time = max(arrival_to_final_time, last_time + 1e-6)
+                    self.key_frames.append((arrival_to_final_time, final_dist))
 
-            # Add a small trailing time so the vehicle doesn't freeze right at the exit
-            # This segment is now longer due to the extension in get_trajectory_coords
-            tail_time = self.key_frames[-1][0] + 2.0
-            self.key_frames.append((tail_time, final_dist))
+                # Add a small trailing time so the vehicle doesn't freeze right at the exit
+                # This segment is now longer due to the extension in get_trajectory_coords
+                tail_time = self.key_frames[-1][0] + 2.0
+                self.key_frames.append((tail_time, final_dist))
 
-        # Clean and monotonicize keyframes (remove duplicates and ensure strictly non-decreasing time)
-        cleaned_keyframes = []
-        if self.key_frames:
-            cleaned_keyframes.append(self.key_frames[0])
-            for i in range(1, len(self.key_frames)):
-                t_prev_clean, d_prev_clean = cleaned_keyframes[-1]
-                t_curr_orig, d_curr_orig = self.key_frames[i]
-                t_curr_clean = max(t_curr_orig, t_prev_clean + 1e-9)
-                # drop spurious duplicates (same time & same dist)
-                if t_curr_clean > t_prev_clean + 1e-9 or abs(d_curr_orig - d_prev_clean) > 1e-6:
-                    cleaned_keyframes.append((t_curr_clean, d_curr_orig))
+            # Clean and monotonicize keyframes (remove duplicates and ensure strictly non-decreasing time)
+            cleaned_keyframes = []
+            if self.key_frames:
+                cleaned_keyframes.append(self.key_frames[0])
+                for i in range(1, len(self.key_frames)):
+                    t_prev_clean, d_prev_clean = cleaned_keyframes[-1]
+                    t_curr_orig, d_curr_orig = self.key_frames[i]
+                    t_curr_clean = max(t_curr_orig, t_prev_clean + 1e-9)
+                    # drop spurious duplicates (same time & same dist)
+                    if t_curr_clean > t_prev_clean + 1e-9 or abs(d_curr_orig - d_prev_clean) > 1e-6:
+                        cleaned_keyframes.append((t_curr_clean, d_curr_orig))
 
-        self.key_frames = cleaned_keyframes
-
+            self.key_frames = cleaned_keyframes
     def get_distance_at_time(self, t):
         """Interpolates distance along path at time t."""
         if not self.key_frames or t < self.key_frames[0][0]: return -self.queue_offset

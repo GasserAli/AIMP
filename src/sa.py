@@ -23,10 +23,10 @@ except ImportError:
 # --- End Import ---
 
 # --- SA Parameters ---
-T_INITIAL = 50.0        # Initial temperature
+T_INITIAL = 100.0        # Initial temperature
 T_MIN = 1.0               # Final temperature
-COOLING_RATE = 0.90       # Cooling rate (e.g., 0.99)
-MAX_ITER_PER_TEMP = 25    # Iterations at each temperature step
+COOLING_RATE = 0.99       # Cooling rate (e.g., 0.99)
+MAX_ITER_PER_TEMP = 1    # Iterations at each temperature step
 MAX_TOTAL_ITERATIONS = 100000 # Total iteration limit
 
 def create_initial_solution(geom):
