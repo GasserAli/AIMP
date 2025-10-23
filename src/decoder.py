@@ -3,12 +3,13 @@ import config
 from geometry import Geometry
 import math
 from typing import List, Dict, Tuple, Union
+from vehicle import Vehicle
 
 # Define Vehicle type hint if not imported directly (for clarity)
 # If Vehicle class is in vehicle.py, uncomment the line below
 # from vehicle import Vehicle
 
-def run_decoder(permutation: List['Vehicle'],
+def run_decoder(permutation: List[Vehicle],
                 speeds: List[float],
                 geom: Geometry, # Needs original queues for t_ear calc
                 tau_p_dict: Dict[str, float],
