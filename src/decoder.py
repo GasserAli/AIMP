@@ -7,7 +7,7 @@ from vehicle import Vehicle
 
 # Define Vehicle type hint if not imported directly (for clarity)
 # If Vehicle class is in vehicle.py, uncomment the line below
-# from vehicle import Vehicle
+from vehicle import Vehicle
 
 def run_decoder(permutation: List[Vehicle],
                 speeds: List[float],
