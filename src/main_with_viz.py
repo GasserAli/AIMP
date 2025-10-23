@@ -65,7 +65,7 @@ from vehicle import Vehicle
 # =============================================================================
 # CONFIGURATION: Choose Visualization Method
 # =============================================================================
-VISUALIZATION_METHOD = 'none'  # Options: 'matplotlib', 'web', or 'none'
+VISUALIZATION_METHOD = 'matplotlib'  # Options: 'matplotlib', 'web', or 'none'
 # =============================================================================
 
 # --- Conditional Imports Based on Visualization Method ---
@@ -75,6 +75,7 @@ web_viz_enabled = False
 if VISUALIZATION_METHOD == 'matplotlib':
     try:
         from visualization import IntersectionVisualization
+        import matplotlib.pyplot as plt
         animation_enabled = True
         print("Matplotlib visualization enabled")
     except ImportError as e:
@@ -107,6 +108,50 @@ T_MIN = 1.0
 COOLING_RATE = 0.99
 MAX_ITER_PER_TEMP = 20
 MAX_TOTAL_ITERATIONS = 100000
+
+
+# =============================================================================
+# PLOTTING FUNCTION
+# =============================================================================
+def plot_results(history_data):
+    """Create a 2x2 grid of SA performance plots, each with temperature overlay."""
+    costs = history_data['costs']
+    avg_delays = history_data['avg_delays']
+    total_delays = history_data['total_delays']
+    emergency_delays = history_data['emergency_delays']
+    temps = history_data['temps']
+
+    fig, axs = plt.subplots(2, 2, figsize=(12, 8))
+    fig.suptitle("Simulated Annealing Performance Metrics with Temperature Overlay",
+                 fontsize=14, fontweight='bold')
+
+    # --- Common function for each subplot ---
+    def plot_with_temp(ax, data, color, title, ylabel):
+        ax2 = ax.twinx()
+        ax.plot(data, '-', color=color, label=ylabel)
+        ax2.plot(temps, '--', color='purple', alpha=0.4, label='Temperature (T)')
+        ax.set_title(title)
+        ax.set_xlabel('Iteration')
+        ax.set_ylabel(ylabel, color=color)
+        ax2.set_ylabel('Temperature (T)', color='purple')
+        ax.grid(True)
+        ax.legend(loc='upper left')
+        ax2.legend(loc='upper right')
+
+    # --- 1. Objective Cost ---
+    plot_with_temp(axs[0, 0], costs, 'blue', 'Weighted Objective Cost (f)', 'Cost (f)')
+
+    # --- 2. Average Delay ---
+    plot_with_temp(axs[0, 1], avg_delays, 'orange', 'Average Delay per Vehicle', 'Avg Delay (s)')
+
+    # --- 3. Total Delay ---
+    plot_with_temp(axs[1, 0], total_delays, 'green', 'Total Delay (f_all)', 'Total Delay (s)')
+
+    # --- 4. Emergency Delay ---
+    plot_with_temp(axs[1, 1], emergency_delays, 'red', 'Emergency Delay (f_em)', 'Emergency Delay (s)')
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.show()
 
 
 # =============================================================================
@@ -214,7 +259,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     
     if not all_points:
         print("Error: No vehicles or no paths found. Exiting.")
-        return [], [], 0.0
+        return [], [], 0.0, None, None, {}
 
     tau_p_dict = {p: config.tau for p in all_points}
     
@@ -296,7 +341,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     print(f"  Best Speeds: {[round(s, 2) for s in speeds_best]}")
     print("="*70)
     
-    return perm_best, speeds_best, obj_best, geom, tau_p_dict
+    return perm_best, speeds_best, obj_best, geom, tau_p_dict, history
 
 
 # =============================================================================
@@ -326,6 +371,7 @@ def visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict):
         print("Opening animation window...")
         print("  (Close the window to continue)")
         animator.start_animation()
+        print("Animation window closed.")
         
     except Exception as e:
         print(f"Error during matplotlib visualization: {e}")
@@ -387,10 +433,16 @@ def main():
     print("="*70 + "\n")
     
     # Run SA optimization
-    perm_best, speeds_best, obj_best, geom, tau_p_dict = run_sa()
+    perm_best, speeds_best, obj_best, geom, tau_p_dict, history = run_sa()
     
     # Run visualization based on selected method
     if VISUALIZATION_METHOD == 'matplotlib' and animation_enabled:
+        # Show performance plots first
+        print("\nDisplaying SA performance plots...")
+        print("  (Close the plots window to continue to animation)")
+        plot_results(history)
+        
+        # Then show animation
         visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
         
     elif VISUALIZATION_METHOD == 'web' and web_viz_enabled:
