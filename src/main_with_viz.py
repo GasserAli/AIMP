@@ -90,11 +90,12 @@ except ImportError as e:
 OPTIMIZATION_ALGORITHM = 'EXPERIMENT' 
 
 # --- 2. CHOOSE VISUALIZATION ---
-# 'matplotlib', 'web', 'none' (For final solution animation)
-VISUALIZATION_METHOD = 'matplotlib'  
+# 'matplotlib', 'web', 'none'
+# (Ignored for 'BOTH' and 'EXPERIMENT' modes)
+VISUALIZATION_METHOD = 'web' 
 
 # --- 3. ALGORITHM PARAMETERS ---
-COMPARISON_EVALUATION_BUDGET = 5000 
+COMPARISON_EVALUATION_BUDGET = 10000 
 NUM_EXPERIMENT_RUNS = 100  
 RANDOM_SEED = 42 
 
@@ -110,6 +111,15 @@ if GA_IMPORTED:
         POPULATION_SIZE, NUM_GENERATIONS, ELITISM_RATE, 
         TOURNAMENT_SIZE, MUTATION_RATE_PERM, MUTATION_RATE_SPEED
     )
+else:
+    # Default values if GA not imported, to prevent errors
+    POPULATION_SIZE = "N/A"
+    NUM_GENERATIONS = "N/A"
+    ELITISM_RATE = "N/A"
+    TOURNAMENT_SIZE = "N/A"
+    MUTATION_RATE_PERM = "N/A"
+    MUTATION_RATE_SPEED = "N/A"
+
 # =============================================================================
 
 
@@ -147,7 +157,6 @@ else:
 # =============================================================================
 # PLOTTING FUNCTIONS
 # =============================================================================
-# (All plotting functions remain the same)
 
 def plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals):
     if not GA_IMPORTED:
@@ -158,24 +167,29 @@ def plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals):
         return
     print("\nPlotting SA vs. GA Convergence...")
     fig, ax = plt.subplots(figsize=(12, 7))
+    
     sa_costs = sa_history['costs']
     sa_best_so_far = np.minimum.accumulate(sa_costs)
     sa_eval_points = range(1, len(sa_best_so_far) + 1)
     if len(sa_best_so_far) > sa_evals:
         sa_best_so_far = sa_best_so_far[:sa_evals]
         sa_eval_points = sa_eval_points[:sa_evals]
+        
     ga_best_per_gen = ga_history['best_f']
     ga_evals_per_gen = (POPULATION_SIZE - int(POPULATION_SIZE * ELITISM_RATE))
     if ga_evals_per_gen <= 0: ga_evals_per_gen = 1
     ga_eval_points = [POPULATION_SIZE] + [POPULATION_SIZE + (i * ga_evals_per_gen) for i in range(1, len(ga_best_per_gen))]
+    
     ga_plot_indices = [i for i, evals in enumerate(ga_eval_points) if evals <= ga_evals]
     if not ga_plot_indices: ga_plot_indices = [0]
+    
     if ga_evals < ga_eval_points[-1]:
          ga_eval_points = [ga_eval_points[i] for i in ga_plot_indices]
          ga_best_per_gen = [ga_best_per_gen[i] for i in ga_plot_indices]
          if ga_evals not in ga_eval_points:
              ga_eval_points.append(ga_evals)
              ga_best_per_gen.append(ga_history['best_f'][-1])
+             
     ax.plot(sa_eval_points, sa_best_so_far, 'b-', label=f'SA (Best Found)', linewidth=2)
     ax.step(ga_eval_points, ga_best_per_gen, 'r-', where='post', label=f'GA (Best Found)', linewidth=2)
     ax.set_title(f'SA vs. GA Convergence (Budget: {COMPARISON_EVALUATION_BUDGET} Evals)', fontsize=16)
@@ -184,6 +198,7 @@ def plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals):
     ax.legend(loc='upper right', fontsize=10)
     ax.grid(True, linestyle='--', alpha=0.6)
     ax.set_xlim(0, COMPARISON_EVALUATION_BUDGET)
+    
     sa_final = sa_best_so_far[-1]
     ga_final = ga_best_per_gen[-1]
     winner_text = f"SA Final: {sa_final:.2f}\nGA Final: {ga_final:.2f}"
@@ -212,6 +227,8 @@ def plot_experiment_distribution(sa_results, ga_results):
     min_bin = min(all_results)
     max_bin = max(all_results)
     bins = np.linspace(min_bin, max_bin, 30) 
+    
+    # --- Plot 1: SA Distribution ---
     plt.figure(figsize=(10, 6))
     plt.hist(sa_results, bins=bins, alpha=0.7, label='SA Histogram', color='blue', density=True)
     try:
@@ -225,6 +242,7 @@ def plot_experiment_distribution(sa_results, ga_results):
     plt.ylabel('Probability Density')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.5)
+    
     sa_mean = np.mean(sa_results)
     sa_std = np.std(sa_results)
     text_str_sa = (f'SA: Mean={sa_mean:.2f}\nSA: Std Dev={sa_std:.2f}')
@@ -233,6 +251,8 @@ def plot_experiment_distribution(sa_results, ga_results):
              verticalalignment='top', horizontalalignment='right',
              bbox=dict(boxstyle='round,pad=0.5', fc='white', alpha=0.8))
     plt.show()
+
+    # --- Plot 2: GA Distribution ---
     plt.figure(figsize=(10, 6))
     plt.hist(ga_results, bins=bins, alpha=0.7, label='GA Histogram', color='red', density=True)
     try:
@@ -241,11 +261,13 @@ def plot_experiment_distribution(sa_results, ga_results):
         plt.plot(kde_x, ga_kde(kde_x), 'red', linewidth=2, label='GA Distribution (KDE)')
     except Exception as e:
         print(f"  Warning: Could not plot GA Gaussian KDE. {e}")
+        
     plt.title(f'GA Result Distribution ({NUM_EXPERIMENT_RUNS} Runs)')
     plt.xlabel('Final Objective Cost (f)')
     plt.ylabel('Probability Density')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.5)
+
     ga_mean = np.mean(ga_results)
     ga_std = np.std(ga_results)
     text_str_ga = (f'GA: Mean={ga_mean:.2f}\nGA: Std Dev={ga_std:.2f}')
@@ -263,44 +285,57 @@ def visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict):
     print("\n" + "="*70)
     print("STARTING MATPLOTLIB VISUALIZATION (SMOOTH)")
     print("="*70)
+    
     try:
         final_speeds_dict = {v.id: s for v, s in zip(perm_best, speeds_best)}
+        
         animator = IntersectionVisualization()
         animator.load_schedule(perm_best, final_speeds_dict)
+        
         print("Opening animation window...")
         print("  (Close the window to continue)")
         animator.start_animation()
         print("Animation window closed.")
+        
     except Exception as e:
         print(f"Error during matplotlib visualization: {e}")
         traceback.print_exc()
+
 
 def visualize_web(perm_best, speeds_best):
     """Run web-based visualization."""
     print("\n" + "="*70)
     print("STARTING WEB-BASED VISUALIZATION")
     print("="*70)
+    
     try:
         visualizer = IntersectionVisualizer()
+        
         print("Starting web server...")
         visualizer.start()
         time.sleep(2)
+        
         for vehicle, speed in zip(perm_best, speeds_best):
             vehicle.velocity = round(speed, 2)
+        
         print("Sending vehicle data to visualization...")
         visualizer.update_vehicles(vehicles=perm_best, permutation=[v.id for v in perm_best])
+        
         print("Starting simulation...")
         visualizer.start_simulation()
+        
         print("\n" + "="*70)
         print("  Web visualization server running!")
         print("    Open your browser to: http://localhost:5000")
         print("    Press Ctrl+C to stop the server")
         print("="*70 + "\n")
+        
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
             print("\n\nShutting down visualization server...")
+            
     except Exception as e:
         print(f"Error during web visualization: {e}")
         traceback.print_exc()
@@ -308,10 +343,16 @@ def visualize_web(perm_best, speeds_best):
 # =============================================================================
 # CSV Saving Functions
 # =============================================================================
+
 SUMMARY_FILENAME = 'experiment_summary_log.csv'
 RAW_FILENAME = 'experiment_raw_data_log.csv'
 
 def save_experiment_summary(timestamp, sa_stats, ga_stats):
+    """
+    Saves the high-level summary statistics to a SINGLE master CSV file.
+    Appends the new run; creates header if file doesn't exist.
+    Now includes algorithm parameters.
+    """
     file_exists = os.path.isfile(SUMMARY_FILENAME)
     try:
         with open(SUMMARY_FILENAME, mode='a', newline='') as f:
@@ -319,15 +360,24 @@ def save_experiment_summary(timestamp, sa_stats, ga_stats):
             if not file_exists:
                 writer.writerow([
                     'Timestamp', 'Algorithm', 'Mean Cost (f)', 'Std Deviation (f)', 
-                    'Avg Run Time (s)', 'Best Cost Overall', 'Num Runs', 'Evaluation Budget'
+                    'Avg Run Time (s)', 'Best Cost Overall', 'Num Runs', 'Evaluation Budget',
+                    'SA_T_Init', 'SA_T_Min', 'SA_Cool_Rate', 'SA_Iter_Per_Temp',
+                    'GA_Pop_Size', 'GA_Elitism', 'GA_Tourn_Size', 'GA_Mut_Perm', 'GA_Mut_Speed'
                 ])
+            
+            # Write SA Data
             writer.writerow([
                 timestamp, 'SA', sa_stats['mean'], sa_stats['std'], sa_stats['time'], sa_stats['best'],
-                NUM_EXPERIMENT_RUNS, COMPARISON_EVALUATION_BUDGET
+                NUM_EXPERIMENT_RUNS, COMPARISON_EVALUATION_BUDGET,
+                T_INITIAL, T_MIN, COOLING_RATE, MAX_ITER_PER_TEMP,
+                'N/A', 'N/A', 'N/A', 'N/A', 'N/A' 
             ])
+            # Write GA Data
             writer.writerow([
                 timestamp, 'GA', ga_stats['mean'], ga_stats['std'], ga_stats['time'], ga_stats['best'],
-                NUM_EXPERIMENT_RUNS, COMPARISON_EVALUATION_BUDGET
+                NUM_EXPERIMENT_RUNS, COMPARISON_EVALUATION_BUDGET,
+                'N/A', 'N/A', 'N/A', 'N/A',
+                POPULATION_SIZE, ELITISM_RATE, TOURNAMENT_SIZE, MUTATION_RATE_PERM, MUTATION_RATE_SPEED
             ])
         print(f"  Successfully appended summary to: {SUMMARY_FILENAME}")
     except IOError as e:
@@ -387,7 +437,6 @@ def main():
             print("ERROR: GA algorithm selected but ga.py could not be imported.")
             return
             
-        # --- MODIFICATION: Pass visualize_realtime=True ---
         (perm_best, speeds_best, obj_best, ga_history, geom, 
          tau_p_dict, best_ga_obj_dict, evals) = run_ga(
             max_evaluations=COMPARISON_EVALUATION_BUDGET,
@@ -419,7 +468,7 @@ def main():
         (ga_perm, ga_speeds, ga_obj, ga_history, 
          ga_geom, ga_tau, best_ga_obj_dict, ga_evals) = run_ga(
             max_evaluations=COMPARISON_EVALUATION_BUDGET,
-            visualize_realtime=False # No real-time plot for comparison
+            visualize_realtime=False 
         )
         
         print("\n" + "="*70)
@@ -503,7 +552,7 @@ def main():
                 max_evaluations=COMPARISON_EVALUATION_BUDGET,
                 initial_population=common_ga_population,
                 verbose=False,
-                visualize_realtime=False # <-- No real-time plot in experiment
+                visualize_realtime=False 
             )
             print(f"    ...Run {i+1} Best: {ga_obj:.2f}")
             ga_results.append(ga_obj)
