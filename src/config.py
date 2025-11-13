@@ -33,7 +33,6 @@ pi = [
     Vehicle(vehicle_id=18, approach="W", maneuver="S", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=19, approach="N", maneuver="S", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=20, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),
-    Vehicle(vehicle_id=20, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=21, approach="E", maneuver="S", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=22, approach="E", maneuver="S", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=23, approach="N", maneuver="S", priority_status=False, velocity=velocity_range),
