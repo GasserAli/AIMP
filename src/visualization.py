@@ -1,29 +1,30 @@
 # FILE: visualization.py
+#
+# --- MODIFIED: This file now uses D3.js/HTML-style "smooth" animation logic ---
+# It no longer uses the decoder's time-accurate schedule.
+# This avoids the "teleporting" (waiting) effect.
+
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.patches import Rectangle, Circle, Patch
 import numpy as np
-import config # Needed for safety_distance
+import config 
 import math
 from typing import List, Dict, Tuple
 
-# *** Ensure Vehicle class is correctly imported ***
 try:
     from vehicle import Vehicle
-    from geometry import Geometry # Import Geometry to get paths for drawing
+    from geometry import Geometry 
 except ImportError:
     print("Error: Could not import Vehicle or Geometry class from vehicle.py/geometry.py")
     class Vehicle: pass
-    class Geometry: pass # Dummy class
+    class Geometry: pass
 
-# --- Constants for Layout (Derived from your map) ---
-VEHICLE_RADIUS = 2.0 # INCREASED Visual size of vehicle points
-QUEUE_SPACING_VIS_FACTOR = 4.0 # INCREASED to separate queued cars visually
-LANE_WIDTH = 20.0 # From your coordinate grid
-
-# --- Extended Plot limits to show queues ---
+# --- Constants for Layout (Copied from original visualization.py) ---
+VEHICLE_RADIUS = 2.0 
+QUEUE_SPACING_VIS_FACTOR = 4.0 
+LANE_WIDTH = 20.0 
 QUEUE_VIS_BUFFER = 60.0
-# Adjust plot limits based on the new, wider road geometry
 MIN_X = -30 - QUEUE_VIS_BUFFER
 MAX_X = 100 + QUEUE_VIS_BUFFER
 MIN_Y = -30 - QUEUE_VIS_BUFFER
@@ -31,32 +32,27 @@ MAX_Y = 100 + QUEUE_VIS_BUFFER
 EXTENT_X = MAX_X - MIN_X
 EXTENT_Y = MAX_Y - MIN_Y
 
-# --- *** YOUR HARDCODED COORDINATE MAP *** ---
-# Lane-specific points (S_X_L) are now permanently omitted.
+# --- Hardcoded Coordinate Map (Copied from original visualization.py) ---
 POINT_COORDINATES = {
-    # Conflict Points (C1-C16)
     'C1': (0, 60),  'C2': (20, 60),  'C3': (40, 60),  'C4': (60, 60),
     'C5': (0, 40),  'C6': (30, 40),  'C7': (60, 40),  'C8': (20, 30),
     'C9': (40, 30), 'C11': (0, 20), 'C10': (30, 20), 'C12': (60, 20),
     'C13': (0, 0),  'C14': (20, 0),  'C15': (40, 0),  'C16': (60, 0),
-
-    # Merge/Exit Points
     'M_W': (-20, 60), 'M_S': (0, -20), 'M_E': (80, 0), 'M_N': (60, 80),
-
-    # Start Points (Queue Origins) - Single point per approach
-    'S_N': (0, 80),   # North Approach
-    'S_E': (80, 60),   # East Approach
-    'S_S': (60, -20), # South Approach
-    'S_W': (-20, 0),   # West Approach
+    'S_N': (0, 80),   'S_E': (80, 60),   'S_S': (60, -20), 'S_W': (-20, 0),
 }
 # --- END MAP ---
 
 
-# --- Helper Functions ---
+# --- Helper Functions (Copied from original visualization.py) ---
+# These functions build the geometric path (the 'polyline')
+# They are used by the animator to know the (x,y) coordinates
+# and the total distance.
+
 def get_trajectory_coords(vehicle: 'Vehicle', path_names: List[str]) -> List[Tuple[float, float]]:
     """
-    FIXED: Ensures straight queue stacking by inserting a p_behind point (coords[0])
-    and extends the trajectory 60 units past the final merge point along the correct road centerline.
+    Builds the full (x,y) coordinate path for a vehicle,
+    including the 'p_behind' queue point and the final exit point.
     """
     coords = []
     approach = getattr(vehicle, 'approach', None)
@@ -69,7 +65,6 @@ def get_trajectory_coords(vehicle: 'Vehicle', path_names: List[str]) -> List[Tup
 
     p_base = POINT_COORDINATES[base_key] # e.g., (0, 80)
     
-    # --- FIX 1: DEFINE THE STRAIGHT QUEUE SEGMENT (For stacking) ---
     QUEUE_LENGTH = 10.0 
     
     if approach == 'N': 
@@ -83,20 +78,18 @@ def get_trajectory_coords(vehicle: 'Vehicle', path_names: List[str]) -> List[Tup
     else:
         p_behind = (p_base[0], p_base[1]) 
 
-    # 1. Add the point BEHIND the queue line (p_behind). (coords[0])
+    # 1. Add p_behind (coords[0])
     coords.append(p_behind)
     
-    # 2. Add the actual queue start point (S_X). (coords[1])
+    # 2. Add p_base (coords[1])
     if tuple(np.round(p_base, 8)) != tuple(np.round(p_behind, 8)):
         coords.append(p_base)
-    # --- END FIX 1 ---
 
     missing_points = []
     
-    # 3. Add the actual path points from geometry.py.
+    # 3. Add all conflict/merge points from the vehicle's path
     for name in path_names:
         if name in POINT_COORDINATES:
-            # Avoid duplicate consecutive points
             if not coords or tuple(np.round(coords[-1], 8)) != tuple(np.round(POINT_COORDINATES[name], 8)):
                 coords.append(POINT_COORDINATES[name])
         else:
@@ -104,17 +97,13 @@ def get_trajectory_coords(vehicle: 'Vehicle', path_names: List[str]) -> List[Tup
             if coords:
                 coords.append(coords[-1])
 
-    # --- FIX 2: CENTERLINE EXIT EXTENSION (Further out) ---
+    # 4. Add the final exit point
     if len(coords) >= 1 and path_names and 'M_' in path_names[-1]:
         merge_point_name = path_names[-1]
         p_merge = np.array(coords[-1]) 
-        
-        # Extended to 60.0 units for a longer exit path
         EXIT_LENGTH = 60.0 
-
         p_final_exit = None
 
-        # Determine the exit path explicitly based on the merge point's direction
         if merge_point_name == 'M_S': 
             p_final_exit = (p_merge[0], p_merge[1] - EXIT_LENGTH) 
         elif merge_point_name == 'M_N': 
@@ -124,10 +113,8 @@ def get_trajectory_coords(vehicle: 'Vehicle', path_names: List[str]) -> List[Tup
         elif merge_point_name == 'M_W': 
             p_final_exit = (p_merge[0] - EXIT_LENGTH, p_merge[1]) 
         
-        # Append the final exit point to the coordinates list
         if p_final_exit and tuple(np.round(p_final_exit, 8)) != tuple(np.round(p_merge, 8)):
             coords.append(p_final_exit)
-    # --- END FIX 2 ---
 
     if missing_points:
         print(f"Warning: V {getattr(vehicle,'id','UNK')} path points not in map: {missing_points}.")
@@ -144,45 +131,33 @@ def calculate_segment_distances(coords: List[Tuple[float, float]]) -> List[float
     for i in range(len(coords) - 1):
         p1 = np.array(coords[i]); p2 = np.array(coords[i+1])
         dist = np.linalg.norm(p1 - p2)
-        # We now use the true distance for ALL segments.
         distances.append(dist if dist > 1e-6 else 0.0)
     return distances
 
 def calculate_cumulative_distances(segment_distances: List[float]) -> np.ndarray:
-    """
-    FIXED: Calculates cumulative distance, forcing distance to start at 0.0 at p_base (coords[1]).
-    The distance at coords[0] (p_behind) will be negative, enabling queue calculation.
-    """
+    """Calculates cumulative distance, forcing distance 0.0 at p_base (coords[1])."""
     cumulative = np.cumsum(segment_distances)
-    
-    # CRITICAL FIX: Offset the entire cumulative array so that the distance 
-    # at coords[1] (p_base) becomes 0.0.
     offset = cumulative[1] if len(cumulative) > 1 else 0.0
-    
     return cumulative - offset
 
 def get_point_at_distance(coords, segment_distances, cumulative_distances, target_distance):
     """Finds (x, y) at a distance along path (linear interp)."""
     if not coords or len(coords) < 2: return None
 
-    # This section handles queue positions (target_distance <= cumulative_distances[0] which is negative)
+    # Handle queue positions
     if target_distance <= cumulative_distances[0]: 
         start_coord = np.array(coords[0]) # p_behind
         next_coord = np.array(coords[1])  # p_base (distance 0)
-        direction_vec = next_coord - start_coord # Vector TOWARDS intersection 
+        direction_vec = next_coord - start_coord 
         norm = np.linalg.norm(direction_vec)
-        
         if norm > 1e-6:
-            unit_direction_towards = direction_vec / norm # Unit vector TOWARDS intersection 
-            unit_direction_away = -unit_direction_towards # Unit vector AWAY from intersection
-            
-            # CRITICAL FIX for Overlap: Position is calculated relative to p_base (distance 0) 
-            # and offset AWAY from the intersection by abs(target_distance).
+            unit_direction_away = -(direction_vec / norm)
             pos = next_coord + unit_direction_away * abs(target_distance)
             return tuple(pos)
         else: return coords[0]
 
-    if target_distance >= cumulative_distances[-1]: # Beyond end point
+    # Handle exit positions
+    if target_distance >= cumulative_distances[-1]:
         end_coord = np.array(coords[-1])
         if len(coords) > 1:
             prev_coord = np.array(coords[-2])
@@ -195,6 +170,7 @@ def get_point_at_distance(coords, segment_distances, cumulative_distances, targe
                 return tuple(pos)
         return coords[-1]
 
+    # Handle in-between points
     for i in range(1, len(cumulative_distances)):
         d_prev = cumulative_distances[i-1]
         d_curr = cumulative_distances[i]
@@ -210,164 +186,102 @@ def get_point_at_distance(coords, segment_distances, cumulative_distances, targe
     return coords[-1]
 
 
+# ---
+# --- MODIFIED ANIMATION LOGIC (D3.js style) ---
+# ---
 class VehicleAnimator:
     """Manages state and animation of one vehicle."""
-    def __init__(self, vehicle: 'Vehicle', ax, color, queue_pos, t_ear, schedule, speeds_dict, tau_p_dict):
+    
+    # --- MODIFICATION: Simplified __init__ ---
+    def __init__(self, vehicle: 'Vehicle', ax, color, queue_pos, start_time, speeds_dict):
         self.id = vehicle.id
         self.path_names = vehicle.path
         self.is_emergency = vehicle.priority_status
         self.speed = speeds_dict.get(self.id, config.velocity_range[0])
         self.valid = False
 
-        # This will now *always* return a path starting from the base S_ point
+        # 1. Build the full (x,y) path
         self.trajectory_coords = get_trajectory_coords(vehicle, self.path_names)
-
         if not self.trajectory_coords or len(self.trajectory_coords) < 2:
              print(f"Error: Insufficient coords for V {self.id} (Path: {self.path_names}).")
              return
 
+        # 2. Calculate distance metrics for the path
         self.segment_distances = calculate_segment_distances(self.trajectory_coords)
         self.cumulative_distances = calculate_cumulative_distances(self.segment_distances)
-        # d0_vis should now be the distance of the p_base to C1/C2 segment (coords[1] to coords[2])
-        self.d0_vis = self.segment_distances[2] if len(self.segment_distances) > 2 else 0
-        # queue_pos is now 0, 1, 2... for the *single approach* queue
-        self.queue_offset = queue_pos * (config.safety_distance * QUEUE_SPACING_VIS_FACTOR)
 
+        # 3. Define the animation parameters (D3-style)
+        
+        # Start distance is the visual queue position (negative value)
+        self.start_dist = -queue_pos * (config.safety_distance * QUEUE_SPACING_VIS_FACTOR)
+        
+        # End distance is the end of the exit ramp
+        self.end_dist = self.cumulative_distances[-1]
+        
+        self.total_dist_to_travel = self.end_dist - self.start_dist
+        safe_speed = max(self.speed, 1.0) # Avoid divide by zero
+        
+        # Total duration of this vehicle's *movement*
+        self.duration = self.total_dist_to_travel / safe_speed
+        
+        # The *absolute time* in the animation when this vehicle starts
+        self.start_time_anim = start_time
+        
+        # The *absolute time* in the animation when this vehicle finishes
+        self.end_time_anim = self.start_time_anim + self.duration
+
+        # 4. Create the Matplotlib patch
         dot_radius = VEHICLE_RADIUS * 1.1 if self.is_emergency else VEHICLE_RADIUS
         self.patch = Circle((0, 0), dot_radius, color=color, zorder=10)
         ax.add_patch(self.patch)
         self.text = ax.text(0, 0, str(self.id), ha='center', va='center',
                              fontsize=7, color='white', zorder=11)
 
-        self.key_frames = [] # (time, distance)
-        self.build_key_frames(t_ear, schedule, tau_p_dict)
-
-        if not self.key_frames:
-             print(f"Debug: V {self.id} invalid - Failed to build keyframes.")
-             return
-
         self.valid = True
-        self.set_position(0.0)
+        self.set_position(0.0) # Set to initial position
 
-    def build_key_frames(self, t_ear, schedule, tau_p_dict):
-        """Builds (time, distance) keyframes from the schedule, respecting queue offset."""
-        if not self.path_names or len(self.trajectory_coords) < 2:
-            return
+    # --- MODIFICATION: No longer need build_key_frames ---
 
-        # Start with the vehicle's position BEFORE the queue is resolved.
-        # This initial keyframe correctly sets the car at its negative distance (queue position).
-        self.key_frames = [(0.0, -self.queue_offset)]
-
-        safe_speed = max(self.speed, 1e-6)
-        
-        # CRITICAL FIX: The distance the vehicle needs to travel to reach the start line (distance 0)
-        # is simply its queue offset.
-        distance_to_start_line = self.queue_offset 
-        time_to_travel_to_start = distance_to_start_line / safe_speed if safe_speed > 1e-6 else 0.0
-
-        # determine time when vehicle reaches S point (distance 0)
-        physical_arrival_time = self.key_frames[0][0] + time_to_travel_to_start 
-
-        # The actual time at S_point is the later of: 
-        # 1. When it physically gets there based on queue position (physical_arrival_time)
-        # 2. When it is scheduled to be ready to go (t_ear).
-        time_at_S_point = max(physical_arrival_time, t_ear)
-        time_at_S_point = max(time_at_S_point, self.key_frames[0][0] + 1e-6)
-        
-        # Append the keyframe for the arrival at the start point (distance 0.0)
-        self.key_frames.append((time_at_S_point, 0.0))
-
-        last_scheduled_time_kf = time_at_S_point
-
-        # Add scheduled arrivals/departures for each named point in path_names
-        for i, point_name in enumerate(self.path_names):
-            if point_name in schedule:
-                
-                current_dist_name_match = -1
-                # Search for the point's coordinate in the final generated trajectory list
-                if point_name in POINT_COORDINATES:
-                    coord_to_find = POINT_COORDINATES[point_name]
-                    for j, coord in enumerate(self.trajectory_coords):
-                        if tuple(np.round(coord, 8)) == tuple(np.round(coord_to_find, 8)):
-                             current_dist_name_match = self.cumulative_distances[j]
-                             break
-                
-                if current_dist_name_match == -1: continue 
-
-                current_dist = current_dist_name_match 
-
-                t_arrival = float(schedule[point_name])
-                # ensure strictly increasing times
-                t_arrival = max(t_arrival, last_scheduled_time_kf + 1e-6)
-                t_departure = t_arrival + float(tau_p_dict.get(point_name, config.tau))
-
-                # arrival keyframe
-                self.key_frames.append((t_arrival, current_dist))
-                # departure keyframe (if dwell)
-                if t_departure > t_arrival + 1e-6:
-                    self.key_frames.append((t_departure, current_dist))
-                last_scheduled_time_kf = max(last_scheduled_time_kf, t_departure)
-
-        # Ensure there's a keyframe that reaches the final coordinate of the path
-        final_coord_index = len(self.trajectory_coords) - 1
-        final_dist = self.cumulative_distances[final_coord_index] if final_coord_index < len(self.cumulative_distances) else None
-
-        if final_dist is not None:
-            # If last recorded distance is less than final_dist, add a linear travel keyframe
-            last_time, last_dist = self.key_frames[-1]
-            if final_dist > last_dist + 1e-6:
-                dist_to_final = final_dist - last_dist
-                # Guarantee a positive travel time (avoid division by zero / instantaneous teleport)
-                time_needed = dist_to_final / safe_speed if safe_speed > 1e-9 else dist_to_final / (1e-3)
-                arrival_to_final_time = last_time + max(time_needed, 0.05)  # at least 50ms travel
-                # If arrival would be earlier than previous time (shouldn't), force monotonicity:
-                arrival_to_final_time = max(arrival_to_final_time, last_time + 1e-6)
-                self.key_frames.append((arrival_to_final_time, final_dist))
-
-            # Add a small trailing time so the vehicle doesn't freeze right at the exit
-            # This segment is now longer due to the extension in get_trajectory_coords
-            tail_time = self.key_frames[-1][0] + 2.0
-            self.key_frames.append((tail_time, final_dist))
-
-        # Clean and monotonicize keyframes (remove duplicates and ensure strictly non-decreasing time)
-        cleaned_keyframes = []
-        if self.key_frames:
-            cleaned_keyframes.append(self.key_frames[0])
-            for i in range(1, len(self.key_frames)):
-                t_prev_clean, d_prev_clean = cleaned_keyframes[-1]
-                t_curr_orig, d_curr_orig = self.key_frames[i]
-                t_curr_clean = max(t_curr_orig, t_prev_clean + 1e-9)
-                # drop spurious duplicates (same time & same dist)
-                if t_curr_clean > t_prev_clean + 1e-9 or abs(d_curr_orig - d_prev_clean) > 1e-6:
-                    cleaned_keyframes.append((t_curr_clean, d_curr_orig))
-
-        self.key_frames = cleaned_keyframes
-
+    # --- MODIFICATION: New get_distance_at_time logic ---
     def get_distance_at_time(self, t):
-        """Interpolates distance along path at time t."""
-        if not self.key_frames or t < self.key_frames[0][0]: return -self.queue_offset
-        for i in range(len(self.key_frames) - 1):
-            t0, d0 = self.key_frames[i]; t1, d1 = self.key_frames[i+1]
-            if t0 - 1e-9 <= t <= t1 + 1e-9:
-                if t1 <= t0 + 1e-9: return d1
-                safe_t = max(t0, min(t, t1))
-                time_diff = t1 - t0
-                if time_diff < 1e-9: return d1
-                ratio = (safe_t - t0) / time_diff
-                distance = d0 + ratio * (d1 - d0)
-                return distance
-        return self.key_frames[-1][1]
+        """
+        NEW LOGIC: Calculates distance based on a simple, constant-speed
+        linear interpolation, just like the D3/HTML version.
+        't' is the current *absolute* animation time.
+        """
+        if t < self.start_time_anim:
+            return self.start_dist # Hasn't started yet, stay in queue
+        
+        if t > self.end_time_anim:
+            return self.end_dist # Animation is finished
+            
+        # It's currently moving. Calculate its progress.
+        elapsed_time = t - self.start_time_anim
+        
+        # Avoid division by zero if duration is somehow 0
+        if self.duration < 1e-6:
+            return self.end_dist
+            
+        progress_ratio = elapsed_time / self.duration
+        
+        target_distance = self.start_dist + progress_ratio * self.total_dist_to_travel
+        return target_distance
 
     def set_position(self, t):
         """Updates patch and text based on time."""
         if not self.valid: return
+        
+        # Get the target distance based on the new logic
         target_dist = self.get_distance_at_time(t)
+        
+        # Use the *existing* helper to find the (x,y) for that distance
         pos = get_point_at_distance(self.trajectory_coords, self.segment_distances,
                                      self.cumulative_distances, target_dist)
         if pos:
             self.patch.set_center(pos)
             self.text.set_position(pos)
-            visible = (self.key_frames and t >= self.key_frames[0][0] - 0.1 and t <= self.key_frames[-1][0] + 0.1)
+            # Vehicle is visible from its start time until its end time
+            visible = (t >= self.start_time_anim - 0.1 and t <= self.end_time_anim + 0.1)
             self.patch.set_visible(visible)
             self.text.set_visible(visible)
         else:
@@ -377,13 +291,9 @@ class VehicleAnimator:
 class IntersectionVisualization:
     """Manages the entire matplotlib visualization."""
     
-    # --- Color definitions for approaches ---
     APPROACH_COLORS = {
-        'N': '#3399FF', # Blue
-        'E': '#FFCC33', # Yellow
-        'S': '#33FF66', # Green
-        'W': '#FF66B2', # Pink
-        'DEFAULT': '#E0E0E0' # White/Gray for any fallback
+        'N': '#3399FF', 'E': '#FFCC33', 'S': '#33FF66',
+        'W': '#FF66B2', 'DEFAULT': '#E0E0E0'
     }
     EMERGENCY_COLOR = 'red'
 
@@ -393,7 +303,8 @@ class IntersectionVisualization:
         self.ax.set_ylim(MIN_Y, MAX_Y)
         self.ax.set_aspect('equal')
         self.ax.set_facecolor('#202020')
-        self.ax.set_title("Intersection Animation - Best Solution Schedule", color='white', y=1.02, fontsize=16)
+        # --- MODIFICATION: Title changed to reflect new logic ---
+        self.ax.set_title("Intersection Animation - Best Solution (Smooth Viz)", color='white', y=1.02, fontsize=16)
         self.vehicle_animators: Dict[int, VehicleAnimator] = {}
         self.ani = None
         self.time_text = self.ax.text(0.02, 0.97, '', color='white', transform=self.ax.transAxes, fontsize=14)
@@ -409,57 +320,34 @@ class IntersectionVisualization:
 
     def setup_intersection_layout(self):
         """
-        Draws roads, lanes, queues, and trajectories based on the
-        hardcoded coordinates being CENTERLINES, visually scaling the roads and removing unused lines.
+        Draws roads, lanes, queues, and trajectories.
+        (Copied from original visualization.py, no changes)
         """
         road_color = '#606060'; line_color = '#FFFFFF'; queue_color = '#404040'
         ylims = (MIN_Y, MAX_Y); xlims = (MIN_X, MAX_X)
         
-        # --- ROAD GEOMETRY ---
-        # Vertical Road Area: x= -10 to x=70
         self.ax.add_patch(Rectangle((-10, MIN_Y), 80, EXTENT_Y, color=road_color, zorder=0))
-        
-        # Horizontal Road Area: y=-10 to y=70
         self.ax.add_patch(Rectangle((MIN_X, -10), EXTENT_X, 80, color=road_color, zorder=0))
 
-
-        # --- LANE LINES (Only keeping primary queue lines and median) ---
-        
         # Vertical Lines
-        self.ax.plot([0, 0], ylims, color=line_color, ls='--', lw=0.5, zorder=1)   # x=0 centerline (Primary N/S queue line)
-        # self.ax.plot([20, 20], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=20 (REMOVED)
-        self.ax.plot([30, 30], ylims, color=line_color, ls='-', lw=1.0, zorder=1)  # x=30 solid median
-        # self.ax.plot([40, 40], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=40 (REMOVED)
-        self.ax.plot([60, 60], ylims, color=line_color, ls='--', lw=0.5, zorder=1) # x=60 centerline (Primary S/N queue line)
+        self.ax.plot([0, 0], ylims, color=line_color, ls='--', lw=0.5, zorder=1)
+        self.ax.plot([30, 30], ylims, color=line_color, ls='-', lw=1.0, zorder=1)
+        self.ax.plot([60, 60], ylims, color=line_color, ls='--', lw=0.5, zorder=1)
         
         # Horizontal Lines
-        self.ax.plot(xlims, [0, 0], color=line_color, ls='--', lw=0.5, zorder=1)   # y=0 centerline (Primary W/E queue line)
-        # self.ax.plot(xlims, [20, 20], color=line_color, ls='--', lw=0.5, zorder=1) # y=20 (REMOVED)
-        self.ax.plot(xlims, [30, 30], color=line_color, ls='-', lw=1.0, zorder=1)  # y=30 solid median
-        # self.ax.plot(xlims, [40, 40], color=line_color, ls='--', lw=0.5, zorder=1) # y=40 (REMOVED)
-        self.ax.plot(xlims, [60, 60], color=line_color, ls='--', lw=0.5, zorder=1) # y=60 centerline (Primary E/W queue line)
+        self.ax.plot(xlims, [0, 0], color=line_color, ls='--', lw=0.5, zorder=1)
+        self.ax.plot(xlims, [30, 30], color=line_color, ls='-', lw=1.0, zorder=1)
+        self.ax.plot(xlims, [60, 60], color=line_color, ls='--', lw=0.5, zorder=1)
 
-
-        # --- NEW QUEUE BOXES (Visually confirms queue area is defined by outer lines and median) ---
         q_len = 20.0 
-        
-        # N Queue Area (x=-10 to 30, above y=70)
         self.ax.add_patch(Rectangle((-10, 70.5), 40, q_len, color=queue_color, alpha=0.3, zorder=1))
-        
-        # S Queue Area (x=30 to 70, below y=-10)
         self.ax.add_patch(Rectangle((30, -10.5 - q_len), 40, q_len, color=queue_color, alpha=0.3, zorder=1))
-        
-        # E Queue Area (y=30 to 70, right of x=70)
         self.ax.add_patch(Rectangle((70.5, 30), q_len, 40, color=queue_color, alpha=0.3, zorder=1))
-        
-        # W Queue Area (y=-10 to 30, left of x=-10)
         self.ax.add_patch(Rectangle((-10.5 - q_len, -10), q_len, 40, color=queue_color, alpha=0.3, zorder=1))
 
-
-        # --- Draw Faint Trajectories ---
         if self.geom_for_drawing:
             try:
-                traj_colors = {'S': '#00FFFF', 'L': '#FF00FF', 'R': '#00FF00'} # Cyan, Magenta, Green
+                traj_colors = {'S': '#00FFFF', 'L': '#FF00FF', 'R': '#00FF00'}
                 if 'Vehicle' in globals():
                     dummy_v = Vehicle(vehicle_id=0, approach='N', maneuver='S', priority_status=False, velocity=(0,0))
                 else: return
@@ -479,32 +367,22 @@ class IntersectionVisualization:
             except Exception as e:
                 print(f"Warning: Could not draw trajectories - {e}")
         
-        # --- Draw Conflict Points ---
         for name, (x, y) in POINT_COORDINATES.items():
             if 'S_' not in name and 'M_' not in name:
                 self.ax.plot(x, y, 'o', color='#FFFFE0', markersize=3, alpha=0.5, zorder=2)
                 
-        # --- Labels and Arrows (Showing Directions) ---
         arrow_props = dict(facecolor='white', edgecolor='none', width=0.5, head_width=2.5, head_length=2.5, zorder=2)
         text_props = dict(color='white', fontsize=10, ha='center', va='center')
         
-        # N Approach (centerline x=0, x=20)
         self.ax.text(10, 90, "NORTH (In)", **text_props)
         self.ax.arrow(10, 85, 0, -10, **arrow_props) 
-        
-        # E Approach (centerline y=60, y=40)
         self.ax.text(90, 50, "EAST (In)", rotation=-90, **text_props)
         self.ax.arrow(85, 50, -10, 0, **arrow_props)
-        
-        # S Approach (centerline x=60, x=40)
         self.ax.text(50, -40, "SOUTH (In)", **text_props)
         self.ax.arrow(50, -35, 0, 10, **arrow_props) 
-        
-        # W Approach (centerline y=0, y=20)
         self.ax.text(-30, 10, "WEST (In)", rotation=90, **text_props)
         self.ax.arrow(-35, 10, 10, 0, **arrow_props)
 
-        # --- Legend for Vehicle Colors (Approach/Emergency) ---
         color_legend_patches = [
              Patch(color=self.EMERGENCY_COLOR, label='Emergency (RED)'),
              Patch(color=self.APPROACH_COLORS['N'], label='N Approach (BLUE)'),
@@ -512,84 +390,78 @@ class IntersectionVisualization:
              Patch(color=self.APPROACH_COLORS['S'], label='S Approach (GREEN)'),
              Patch(color=self.APPROACH_COLORS['W'], label='W Approach (PINK)')
         ]
-        
-        # Combine Path Legend and Color Legend
         path_legend_patches = [
              Patch(color='#00FFFF', label='Straight Path'),
              Patch(color='#FF00FF', label='Left Turn Path'),
              Patch(color='#00FF00', label='Right Turn Path')
         ]
-        
-        # Create a single legend using handles
         all_legend_handles = path_legend_patches + color_legend_patches
         self.ax.legend(handles=all_legend_handles, loc='lower right', fontsize='small', ncol=2)
         
         self.ax.axis('off')
 
-    def load_schedule(self, best_perm, final_schedule, final_tear, speeds_dict, tau_p_dict):
-        """Loads schedule and creates VehicleAnimator objects."""
-        if not final_schedule or not final_tear or not speeds_dict:
-            print("Animation Error: Missing schedule, t_ear, or speeds data.")
+    # ---
+    # --- MODIFIED LOADING LOGIC (D3.js style) ---
+    # ---
+    def load_schedule(self, best_perm, speeds_dict):
+        """
+        Loads vehicles and creates animators based on D3-style logic.
+        This no longer requires 'final_schedule', 'final_tear', or 'tau_p_dict'.
+        """
+        if not speeds_dict:
+            print("Animation Error: Missing speeds data.")
             return
 
-        # Build queue ordering using Geometry's entry queues so drawing order matches simulation
+        # Build queue ordering (just like D3)
+        # We group vehicles by approach, then sort by permutation index
+        approach_queues = {'N': [], 'E': [], 'S': [], 'W': []}
+        
+        for v in best_perm:
+            if v.approach in approach_queues:
+                approach_queues[v.approach].append(v)
+        
+        # We need to find the queue *index* for each vehicle.
         queue_positions = {}
-        queues = {'N': [], 'E': [], 'S': [], 'W': []}
-
-        try:
-            geom = Geometry()
-            if 'Vehicle' in globals():
-                 geom.create_entry_queue(config.pi)
-            
-            for approach, q_list in geom.entry_queues.items():
-                if approach in queues:
-                    ids = [getattr(v, 'id', v) for v in q_list]
-                    queues[approach] = ids
-        except Exception as e:
-            print(f"Warning: Geometry.create_entry_queue failed: {e}. Falling back to config.pi ordering.")
-            for v_cfg in config.pi:
-                if v_cfg.approach in queues:
-                    queues[v_cfg.approach].append(v_cfg.id)
-
-        # Assign queue positions (0,1,2...) for each approach queue
-        for approach, q_ids in queues.items():
-            for pos, v_id in enumerate(q_ids):
-                queue_positions[v_id] = pos
+        for approach, q_list in approach_queues.items():
+            # Find all vehicles in this queue, *in the order* they appear in best_perm
+            vehicles_in_queue = [v for v in best_perm if v.approach == approach]
+            for i, v in enumerate(vehicles_in_queue):
+                queue_positions[v.id] = i # 0, 1, 2...
 
         self.vehicle_animators.clear()
         vehicles_loaded = 0
+        self.t_max = 0.0 # Reset max time
 
-        for i, vehicle in enumerate(best_perm):
-            # Color logic
+        for vehicle in best_perm:
             if vehicle.priority_status:
                 v_color = self.EMERGENCY_COLOR
             else:
                 v_color = self.APPROACH_COLORS.get(vehicle.approach, self.APPROACH_COLORS['DEFAULT'])
 
-            # Each vehicle must have entries in final_schedule/final_tear and speeds_dict
-            if vehicle.id in final_schedule and vehicle.id in final_tear and vehicle.id in speeds_dict:
-                q_pos = queue_positions.get(vehicle.id, 0)
-                t_ear_val = final_tear[vehicle.id]
-                schedule_val = final_schedule[vehicle.id]
+            if vehicle.id in speeds_dict:
+                q_pos_index = queue_positions.get(vehicle.id, 0)
+                
+                # --- NEW: Calculate stagger time (like D3) ---
+                # Stagger start time by 1.0 second per vehicle in queue
+                stagger_start_time = q_pos_index * 1.0 
+                
                 animator = VehicleAnimator(vehicle, self.ax, v_color,
-                                           q_pos, t_ear_val, schedule_val, speeds_dict, tau_p_dict)
+                                           q_pos_index, stagger_start_time, speeds_dict)
+                
                 if animator.valid:
                     self.vehicle_animators[vehicle.id] = animator
                     vehicles_loaded += 1
+                    # Update total animation time
+                    self.t_max = max(self.t_max, animator.end_time_anim)
                 else:
                     print(f"Debug: Failed to initialize animator for V {vehicle.id}.")
             else:
-                print(f"Debug: Missing schedule/tear/speed for V {vehicle.id}, skipping animator.")
+                print(f"Debug: Missing speed for V {vehicle.id}, skipping animator.")
 
-        # Compute t_max from all animators (duration)
-        self.t_max = 0.0
-        for v_anim in self.vehicle_animators.values():
-            if v_anim.key_frames:
-                self.t_max = max(self.t_max, v_anim.key_frames[-1][0])
         if self.t_max <= 1e-6 and self.vehicle_animators:
-            self.t_max = 10.0
+            self.t_max = 10.0 # Fallback duration
 
-        print(f"Animation loaded: {vehicles_loaded} vehicles. Duration: {self.t_max:.2f}s.")
+        print(f"Smooth animation loaded: {vehicles_loaded} vehicles. Total Duration: {self.t_max:.2f}s.")
 
 
     def init_anim(self):

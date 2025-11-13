@@ -23,8 +23,8 @@ except ImportError:
 # --- SA Parameters ---
 T_INITIAL = 100.0
 T_MIN = 1.0
-COOLING_RATE = 0.99
-MAX_ITER_PER_TEMP = 1
+COOLING_RATE = 0.90
+MAX_ITER_PER_TEMP = 20
 MAX_TOTAL_ITERATIONS = 100000 
 
 def create_initial_solution(geom):
@@ -32,7 +32,6 @@ def create_initial_solution(geom):
     Generates a valid initial solution (permutation, speeds).
     Respects C0 constraint.
     """
-    # --- FIX: This now creates a random permutation ---
     initial_perm = copy.deepcopy(config.pi)
     random.shuffle(initial_perm)
     
@@ -49,12 +48,11 @@ def create_initial_solution(geom):
                 break
         
         if leader_in_queue is None:
-            continue # No vehicles from this queue
+            continue 
 
         last_speed = random.uniform(v_min_global, v_max_global)
         initial_speeds_dict[leader_in_queue.id] = last_speed
         
-        # Find followers
         followers_in_queue = [v for v in queue if v.id != leader_in_queue.id and v.id in [p.id for p in initial_perm]]
         
         for v_follower in followers_in_queue:
@@ -62,11 +60,10 @@ def create_initial_solution(geom):
              current_min = min(v_min_global, current_max)
              if current_min > current_max: current_min = current_max
              
-             new_speed = random.uniform(current_min, current_max + 1e-9) # Add epsilon
+             new_speed = random.uniform(current_min, current_max + 1e-9)
              initial_speeds_dict[v_follower.id] = new_speed
              last_speed = new_speed
 
-    # Ensure all vehicles in initial_perm get a speed
     initial_speeds_list = []
     for v in initial_perm:
         if v.id not in initial_speeds_dict:
@@ -83,11 +80,9 @@ def validate_speeds(permutation, speeds, geom):
     """
     v_new = list(speeds)
     speed_dict = {p.id: s for p, s in zip(permutation, v_new)}
-    # Use geom passed in (should have original config queues)
     for queue in geom.entry_queues.values():
         if not queue: continue
         
-        # Find leader in this permutation
         leader_in_queue = None
         for v in queue:
             if v.id in speed_dict:
@@ -97,16 +92,14 @@ def validate_speeds(permutation, speeds, geom):
         
         last_speed = speed_dict[leader_in_queue.id]
         
-        # Find followers
         followers_in_queue = [v for v in queue if v.id != leader_in_queue.id and v.id in speed_dict]
         
         for v_follower in followers_in_queue:
             follower_speed = speed_dict[v_follower.id]
             if follower_speed > last_speed:
                 speed_dict[v_follower.id] = last_speed
-            last_speed = speed_dict[v_follower.id] # Update for the next car
+            last_speed = speed_dict[v_follower.id] 
 
-    # Rebuild list based on the *input permutation* order
     validated_speeds_list = [speed_dict[v.id] for v in permutation]
     return validated_speeds_list
 
@@ -120,11 +113,9 @@ def generate_neighbor(perm_current, speeds_current, geom):
     v_min_global, v_max_global = config.velocity_range
 
     if random.random() < 0.5 and len(perm_new) > 1:
-        # Swap Permutation
         idx1, idx2 = random.sample(range(len(perm_new)), 2)
         perm_new[idx1], perm_new[idx2] = perm_new[idx2], perm_new[idx1]
     elif len(speeds_new) > 0:
-        # Change Speed
         idx = random.randrange(len(speeds_new))
         change = random.uniform(-2.0, 2.0)
         speeds_new[idx] += change
@@ -210,9 +201,6 @@ def plot_results(history_data):
     plt.show()
 
 
-# ---
-# --- THIS IS THE NEW, CORRECTED FUNCTION DEFINITION ---
-# ---
 def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
            iter_per_temp=MAX_ITER_PER_TEMP, max_iter=MAX_TOTAL_ITERATIONS,
            initial_solution=None, verbose=True):
@@ -234,7 +222,6 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
 
     tau_p_dict = {p: config.tau for p in all_points}
 
-    # --- Use provided initial solution if available ---
     if initial_solution:
         if verbose:
             print("Using provided initial solution.")
@@ -311,13 +298,13 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
         if T <= T_min: print(f"Termination: Reached minimum temperature ({T_min}). Final T={T:.2f}")
         print(f"Total evaluations: {iter_count}")
         print(f"Best Objective (f): {obj_best:.2f}")
-        # print(f"Best Permutation (IDs): {[v.id for v in perm_best]}")
-        # print(f"Best Speeds: {[round(s, 2) for s in speeds_best]}")
     
     return perm_best, speeds_best, obj_best, history, geom_for_validation, tau_p_dict, iter_count
 
 
 if __name__ == "__main__":
+    
+    # --- MODIFICATION: Must use the new smooth visualizer ---
     try:
         from visualization import IntersectionVisualization
         animation_enabled_standalone = True
@@ -334,16 +321,11 @@ if __name__ == "__main__":
     if animation_enabled_standalone:
         print("\n--- Animating Best Solution (Standalone Run) ---")
         try:
-            obj_dict, final_schedule, final_tear = evaluate_solution(
-                permutation=perm_best,
-                speeds=speeds_best,
-                geom=geom,
-                tau_p_dict=tau_p_dict,
-                return_full_schedule=True
-            )
+            # --- MODIFICATION: Call the new, simpler load_schedule ---
             final_speeds_dict = {v.id: s for v, s in zip(perm_best, speeds_best)}
             animator = IntersectionVisualization()
-            animator.load_schedule(perm_best, final_schedule, final_tear, final_speeds_dict, tau_p_dict)
+            animator.load_schedule(perm_best, final_speeds_dict) # <-- No longer needs schedule
+            
             print("Starting animation window...")
             animator.start_animation()
         except Exception as e:
