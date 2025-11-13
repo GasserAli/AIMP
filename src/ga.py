@@ -11,18 +11,17 @@ from typing import Tuple
 import config
 from geometry import Geometry
 from vehicle import Vehicle
-# We only import what's needed from sa.py
 from sa import evaluate_solution, validate_speeds
 
 # =============================================================================
 # GA PARAMETERS
 # =============================================================================
-POPULATION_SIZE = 50       # Number of solutions in each generation
-NUM_GENERATIONS = 100      # Number of generations to run
-ELITISM_RATE = 0.1         # Percentage of top solutions to carry over
-TOURNAMENT_SIZE = 3        # Number of individuals to select for tournament
-MUTATION_RATE_PERM = 0.1   # Probability of a permutation mutation (swap)
-MUTATION_RATE_SPEED = 0.1  # Probability of a speed mutation (adjust)
+POPULATION_SIZE = 50
+NUM_GENERATIONS = 200
+ELITISM_RATE = 0.1
+TOURNAMENT_SIZE = 3
+MUTATION_RATE_PERM = 0.1
+MUTATION_RATE_SPEED = 0.1
 
 # =============================================================================
 # GA CORE COMPONENTS
@@ -60,6 +59,7 @@ def create_initial_solution(geom):
              current_max = min(v_max_global, last_speed)
              current_min = min(v_min_global, current_max)
              if current_min > current_max: current_min = current_max
+             
              new_speed = random.uniform(current_min, current_max + 1e-9)
              initial_speeds_dict[v_follower.id] = new_speed
              last_speed = new_speed
@@ -70,7 +70,7 @@ def create_initial_solution(geom):
              initial_speeds_dict[v.id] = random.uniform(v_min_global, v_max_global)
         initial_speeds_list.append(initial_speeds_dict[v.id])
 
-    # print(f"  Initial Perm (IDs): {[v.id for v in initial_perm]}") # Keep this commented for cleaner logs
+    print(f"  Initial GA Perm (IDs): {[v.id for v in initial_perm]}")
     return initial_perm, initial_speeds_list
 
 
@@ -79,8 +79,7 @@ class Individual:
     def __init__(self, permutation: list[Vehicle], speeds: list[float]):
         self.permutation = permutation
         self.speeds = speeds
-        # --- MODIFICATION: Store all cost components ---
-        self.fitness = math.inf  # Main objective 'f'
+        self.fitness = math.inf
         self.f = math.inf
         self.f_em = math.inf
         self.f_all = math.inf
@@ -90,7 +89,6 @@ class Individual:
         """Evaluates the solution and stores its fitness and all components."""
         obj_dict = evaluate_solution(self.permutation, self.speeds, geom, tau_p_dict)
         
-        # --- MODIFICATION: Store all components ---
         self.f = obj_dict.get('f', math.inf)
         self.f_em = obj_dict.get('fem', math.inf)
         self.f_all = obj_dict.get('fall', math.inf)
@@ -98,13 +96,13 @@ class Individual:
         delays = obj_dict.get('delays', {})
         self.avg_delay = sum(delays.values()) / len(delays) if delays else 0.0
         
-        # Fitness is the main objective 'f'
         self.fitness = self.f
         return self.f
 
 def create_initial_population(size, geom) -> list[Individual]:
     """Creates a list of random, valid Individuals."""
     population = []
+    print(f"Creating initial population (Size: {size})...")
     for _ in range(size):
         perm, speeds = create_initial_solution(geom)
         population.append(Individual(perm, speeds))
@@ -188,11 +186,13 @@ def mutate(individual: Individual, geom):
 # MAIN GA FUNCTION
 # =============================================================================
 
-def run_ga(max_evaluations=None):
+# --- MODIFICATION: Added initial_population and verbose parameters ---
+def run_ga(max_evaluations=None, initial_population=None, verbose=True):
     """Main Genetic Algorithm (GA) loop."""
-    print("--- Starting Genetic Algorithm ---")
-
-    print("Initializing geometry and parameters...")
+    if verbose:
+        print("--- Starting Genetic Algorithm ---")
+        print("Initializing geometry and parameters...")
+        
     geom = Geometry()
     all_vehicles = config.pi
     geom.create_entry_queue(all_vehicles)
@@ -206,16 +206,23 @@ def run_ga(max_evaluations=None):
 
     tau_p_dict = {p: config.tau for p in all_points}
 
-    print(f"Creating initial population (Size: {POPULATION_SIZE})...")
-    population = create_initial_population(POPULATION_SIZE, geom)
-    
-    print("Evaluating initial population...")
+    # --- MODIFICATION: Use provided initial population if available ---
+    if initial_population:
+        if verbose:
+            print("Using provided initial population.")
+        population = copy.deepcopy(initial_population)
+    else:
+        population = create_initial_population(POPULATION_SIZE, geom)
+    # --- END MODIFICATION ---
+
+    if verbose:
+        print("Evaluating initial population...")
     for ind in population:
-        ind.calculate_fitness(geom, tau_p_dict)
+        if ind.fitness == math.inf: # Only evaluate if needed
+            ind.calculate_fitness(geom, tau_p_dict)
     
     eval_count = POPULATION_SIZE
     
-    # --- MODIFICATION: Expanded history tracking ---
     history = {
         'best_f': [], 'avg_f': [], 'best_fem': [],
         'best_fall': [], 'best_avg_delay': []
@@ -224,14 +231,14 @@ def run_ga(max_evaluations=None):
     best_solution = min(population, key=lambda ind: ind.fitness)
     best_fitness = best_solution.fitness
     
-    # Populate history for generation 0
     history['best_f'].append(best_solution.f)
     history['best_fem'].append(best_solution.f_em)
     history['best_fall'].append(best_solution.f_all)
     history['best_avg_delay'].append(best_solution.avg_delay)
     history['avg_f'].append(np.mean([ind.f for ind in population]))
 
-    print(f"Initial Best Fitness (f): {best_fitness:.2f}")
+    if verbose:
+        print(f"Initial Best Fitness (f): {best_fitness:.2f}")
 
     num_elitism = int(POPULATION_SIZE * ELITISM_RATE)
     
@@ -239,10 +246,12 @@ def run_ga(max_evaluations=None):
         evals_per_gen = POPULATION_SIZE - num_elitism
         if evals_per_gen <= 0: evals_per_gen = 1
         num_generations = (max_evaluations - POPULATION_SIZE) // evals_per_gen
-        print(f"Running for {num_generations} generations based on evaluation budget.")
+        if verbose:
+            print(f"Running for {num_generations} generations based on evaluation budget.")
     else:
         num_generations = NUM_GENERATIONS
-        print(f"Running for {num_generations} generations.")
+        if verbose:
+            print(f"Running for {num_generations} generations.")
 
 
     for gen in range(num_generations):
@@ -280,7 +289,6 @@ def run_ga(max_evaluations=None):
             best_fitness = best_solution.fitness
             new_best_found = True
 
-        # --- MODIFICATION: Update full history ---
         history['best_f'].append(best_solution.f)
         history['best_fem'].append(best_solution.f_em)
         history['best_fall'].append(best_solution.f_all)
@@ -289,27 +297,28 @@ def run_ga(max_evaluations=None):
         
         avg_fitness_current = history['avg_f'][-1]
 
-        # Print update every generation
-        if new_best_found:
-            print(f"  Gen {gen+1}: * NEW BEST: {best_fitness:.2f} (Avg: {avg_fitness_current:.2f})")
-        else:
-            print(f"  Gen {gen+1}:   Best: {best_fitness:.2f} (Avg: {avg_fitness_current:.2f})")
+        if verbose:
+            if new_best_found:
+                print(f"  Gen {gen+1}: * NEW BEST: {best_fitness:.2f} (Avg: {avg_fitness_current:.2f})")
+            else:
+                print(f"  Gen {gen+1}:   Best: {best_fitness:.2f} (Avg: {avg_fitness_current:.2f})")
 
         if max_evaluations is not None and eval_count >= max_evaluations:
-            print(f"Termination: Reached evaluation limit ({eval_count}).")
+            if verbose:
+                print(f"Termination: Reached evaluation limit ({eval_count}).")
             break
-
-    print("\n--- GA Finished ---")
-    print(f"Total generations: {gen + 1}")
-    print(f"Total evaluations: {eval_count}")
-    print(f"Best Objective (f): {best_fitness:.2f}")
+            
+    if verbose:
+        print("\n--- GA Finished ---")
+        print(f"Total generations: {gen + 1}")
+        print(f"Total evaluations: {eval_count}")
+        print(f"Best Objective (f): {best_fitness:.2f}")
     
-    # Get the final objective dictionary for the bar plot
     best_solution_obj_dict = {
         "f": best_solution.f,
         "fem": best_solution.f_em,
         "fall": best_solution.f_all,
-        "delays": {} # Not needed for plot, but good to have
+        "delays": {} 
     }
 
     return (best_solution.permutation, best_solution.speeds, best_fitness, 
@@ -321,7 +330,6 @@ def run_ga(max_evaluations=None):
 
 def plot_ga_performance_dashboard(history_data):
     """
-    --- NEW 2x2 PLOT ---
     Create a 2x2 grid of GA performance plots.
     """
     if not history_data:
@@ -333,7 +341,6 @@ def plot_ga_performance_dashboard(history_data):
     fig, axs = plt.subplots(2, 2, figsize=(12, 8))
     fig.suptitle("GA Performance Dashboard", fontsize=14, fontweight='bold')
 
-    # --- 1. Best vs. Avg Objective Cost (f) ---
     axs[0, 0].plot(generations, history_data['best_f'], 'b-', label='Best Fitness (f)')
     axs[0, 0].plot(generations, history_data['avg_f'], 'r--', label='Average Fitness (f)')
     axs[0, 0].set_title('Best vs. Average Objective Cost (f)')
@@ -342,7 +349,6 @@ def plot_ga_performance_dashboard(history_data):
     axs[0, 0].legend(loc='upper right')
     axs[0, 0].grid(True)
 
-    # --- 2. Best Solution's Average Delay ---
     axs[0, 1].plot(generations, history_data['best_avg_delay'], 'g-', label='Best Sol. Avg Delay')
     axs[0, 1].set_title('Average Delay of Best Solution')
     axs[0, 1].set_xlabel('Generation')
@@ -350,7 +356,6 @@ def plot_ga_performance_dashboard(history_data):
     axs[0, 1].legend(loc='upper right')
     axs[0, 1].grid(True)
 
-    # --- 3. Best Solution's Total Delay (f_all) ---
     axs[1, 0].plot(generations, history_data['best_fall'], 'k-', label='Best Sol. Total Delay (f_all)')
     axs[1, 0].set_title('Total Delay of Best Solution')
     axs[1, 0].set_xlabel('Generation')
@@ -358,7 +363,6 @@ def plot_ga_performance_dashboard(history_data):
     axs[1, 0].legend(loc='upper left')
     axs[1, 0].grid(True)
 
-    # --- 4. Best Solution's Emergency Delay (f_em) ---
     axs[1, 1].plot(generations, history_data['best_fem'], 'm-', label='Best Sol. Emergency Delay (f_em)')
     axs[1, 1].set_title('Emergency Delay of Best Solution')
     axs[1, 1].set_xlabel('Generation')
