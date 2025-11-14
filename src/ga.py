@@ -18,10 +18,10 @@ from sa import evaluate_solution, validate_speeds
 # =============================================================================
 # GA PARAMETERS
 # =============================================================================
-POPULATION_SIZE = 90
-NUM_GENERATIONS = 500
-ELITISM_RATE = 0.3
-TOURNAMENT_SIZE = 10
+POPULATION_SIZE = 60
+NUM_GENERATIONS = 100
+ELITISM_RATE = 0.1
+TOURNAMENT_SIZE = 5
 MUTATION_RATE_PERM = 0.1
 MUTATION_RATE_SPEED = 0.1
 
