@@ -25,9 +25,9 @@ except ImportError:
 # --- SA Parameters ---
 T_INITIAL = 100.0        # Initial temperature
 T_MIN = 1.0               # Final temperature
-COOLING_RATE = 0.90       # Cooling rate (e.g., 0.99)
+COOLING_RATE = 0.99      # Cooling rate (e.g., 0.99)
 MAX_ITER_PER_TEMP = 20    # Iterations at each temperature step
-MAX_TOTAL_ITERATIONS = 100000 # Total iteration limit
+MAX_TOTAL_ITERATIONS = 5000 # Total iteration limit
 
 def create_initial_solution(geom):
     """
@@ -206,11 +206,14 @@ def plot_results(history_data):
     plot_with_temp(axs[1, 1], emergency_delays, 'red', 'Emergency Delay (f_em)', 'Emergency Delay (s)')
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plt.show()
+    # Close the figure during batch/experiment runs to avoid blocking the process.
+    # If you want to view the SA plots interactively, replace plt.close() with plt.show().
+    plt.close()
 
 
 def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
-           iter_per_temp=MAX_ITER_PER_TEMP, max_iter=MAX_TOTAL_ITERATIONS, animation_enabled=False):
+           iter_per_temp=MAX_ITER_PER_TEMP, max_iter=MAX_TOTAL_ITERATIONS, animation_enabled=False,
+           return_history: bool = False):
     """Main Simulated Annealing (SA) algorithm."""
     print("--- Starting Simulated Annealing ---")
 
@@ -236,6 +239,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     perm_best = perm_current
     speeds_best = speeds_current
     obj_best = obj_current
+    obj_best_dict = obj_dict_current
 
     T = T_init
     iter_count = 0
@@ -266,6 +270,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
                 obj_dict_current = obj_dict_new
                 if obj_current < obj_best:
                     perm_best, speeds_best, obj_best = perm_current, speeds_current, obj_current
+                    obj_best_dict = obj_dict_current
                     print(f"  Iter {iter_count}: * New Best Solution: {obj_best:.2f}")
 
             iter_count += 1
@@ -328,7 +333,10 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     else:
         print("\nAnimation disabled (visualization module not found or failed to import).")
 
-    return perm_best, speeds_best, obj_best
+    if return_history:
+        return perm_best, speeds_best, obj_best_dict, history
+    else:
+        return perm_best, speeds_best, obj_best_dict
 
 
 if __name__ == "__main__":
