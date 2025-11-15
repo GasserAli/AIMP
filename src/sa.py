@@ -24,7 +24,7 @@ except ImportError:
 T_INITIAL = 100.0
 T_MIN = 1.0
 COOLING_RATE = 0.99
-MAX_ITER_PER_TEMP = 5
+MAX_ITER_PER_TEMP = 2
 MAX_TOTAL_ITERATIONS = 100000 
 
 def create_initial_solution(geom):
@@ -201,6 +201,106 @@ def plot_results(history_data):
     plt.show()
 
 
+# def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
+#            iter_per_temp=MAX_ITER_PER_TEMP, max_iter=MAX_TOTAL_ITERATIONS,
+#            initial_solution=None, verbose=True):
+#     """Main Simulated Annealing (SA) algorithm."""
+    
+#     if verbose:
+#         print("--- Starting Simulated Annealing ---")
+#         print("Initializing geometry and parameters...")
+        
+#     geom_for_validation = Geometry()
+#     all_vehicles = config.pi
+#     geom_for_validation.create_entry_queue(all_vehicles)
+#     for v in all_vehicles:
+#         geom_for_validation.set_trajectory(v)
+#     all_points = set().union(*(v.path for v in all_vehicles if v.path))
+#     if not all_points:
+#         print("Error: No vehicles or no paths found. Exiting.")
+#         return [], [], 0.0, {}, None, None, 0
+
+#     tau_p_dict = {p: config.tau for p in all_points}
+
+#     if initial_solution:
+#         if verbose:
+#             print("Using provided initial solution.")
+#         (perm_current, speeds_current) = (copy.deepcopy(initial_solution[0]), copy.deepcopy(initial_solution[1]))
+#     else:
+#         if verbose:
+#             print("Creating new initial solution...")
+#         (perm_current, speeds_current) = create_initial_solution(geom_for_validation)
+
+#     obj_dict_current = evaluate_solution(perm_current, speeds_current, geom_for_validation, tau_p_dict)
+#     obj_current = obj_dict_current['f']
+
+#     perm_best = perm_current
+#     speeds_best = speeds_current
+#     obj_best = obj_current
+
+#     T = T_init
+#     iter_count = 1 
+#     history = {'costs': [], 'avg_delays': [], 'total_delays': [], 'emergency_delays': [], 'temps': []}
+    
+#     history['costs'].append(obj_current)
+#     history['temps'].append(T)
+#     history['total_delays'].append(obj_dict_current.get('fall', 0))
+#     history['emergency_delays'].append(obj_dict_current.get('fem', 0))
+#     current_delays = obj_dict_current.get('delays', {})
+#     avg_delay = sum(current_delays.values()) / len(current_delays) if current_delays else 0.0
+#     history['avg_delays'].append(avg_delay)
+
+#     if verbose:
+#         print(f"Initial Solution Cost (f): {obj_best:.2f}")
+
+#     while T > T_min and iter_count < max_iter:
+#         for i in range(iter_per_temp):
+#             (perm_new, speeds_new) = generate_neighbor(perm_current, speeds_current, geom_for_validation)
+
+#             obj_dict_new = evaluate_solution(
+#                 permutation=perm_new,
+#                 speeds=speeds_new,
+#                 geom=geom_for_validation,
+#                 tau_p_dict=tau_p_dict,
+#                 return_full_schedule=False
+#             )
+#             obj_new = obj_dict_new['f']
+            
+#             iter_count += 1 
+
+#             ΔE = obj_new - obj_current
+
+#             if ΔE < 0 or (T > 1e-9 and math.exp(-ΔE / T) > random.random()):
+#                 perm_current, speeds_current, obj_current = perm_new, speeds_new, obj_new
+#                 obj_dict_current = obj_dict_new
+#                 if obj_current < obj_best:
+#                     perm_best, speeds_best, obj_best = perm_current, speeds_current, obj_current
+#                     if verbose:
+#                         print(f"  Iter {iter_count}: * New Best Solution: {obj_best:.2f}")
+
+#             history['costs'].append(obj_current)
+#             history['temps'].append(T)
+#             history['total_delays'].append(obj_dict_current.get('fall', 0))
+#             history['emergency_delays'].append(obj_dict_current.get('fem', 0))
+#             current_delays = obj_dict_current.get('delays', {})
+#             avg_delay = sum(current_delays.values()) / len(current_delays) if current_delays else 0.0
+#             history['avg_delays'].append(avg_delay)
+
+#             if iter_count >= max_iter: break
+        
+#         if iter_count >= max_iter: break 
+
+#         T = T * cool_rate 
+
+#     if verbose:
+#         print("\n--- SA Finished ---")
+#         if iter_count >= max_iter: print(f"Termination: Reached max iteration/evaluation limit ({max_iter}).")
+#         if T <= T_min: print(f"Termination: Reached minimum temperature ({T_min}). Final T={T:.2f}")
+#         print(f"Total evaluations: {iter_count}")
+#         print(f"Best Objective (f): {obj_best:.2f}")
+    
+#     return perm_best, speeds_best, obj_best, history, geom_for_validation, tau_p_dict, iter_count
+
 def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
            iter_per_temp=MAX_ITER_PER_TEMP, max_iter=MAX_TOTAL_ITERATIONS,
            initial_solution=None, verbose=True):
@@ -242,6 +342,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     iter_count = 1 
     history = {'costs': [], 'avg_delays': [], 'total_delays': [], 'emergency_delays': [], 'temps': []}
     
+    # Record initial state
     history['costs'].append(obj_current)
     history['temps'].append(T)
     history['total_delays'].append(obj_dict_current.get('fall', 0))
@@ -253,8 +354,14 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     if verbose:
         print(f"Initial Solution Cost (f): {obj_best:.2f}")
 
-    while T > T_min and iter_count < max_iter:
+    # FIX: Change primary loop to be driven by iteration count (max_iter)
+    # The temperature T will continue to cool until T_min is reached, 
+    # but the loop itself runs up to max_iter.
+    while iter_count < max_iter:
         for i in range(iter_per_temp):
+            # Check for termination inside the inner loop as well
+            if iter_count >= max_iter: break 
+            
             (perm_new, speeds_new) = generate_neighbor(perm_current, speeds_current, geom_for_validation)
 
             obj_dict_new = evaluate_solution(
@@ -270,6 +377,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
 
             ΔE = obj_new - obj_current
 
+            # T is used for acceptance, but the loop continues even if T < T_min
             if ΔE < 0 or (T > 1e-9 and math.exp(-ΔE / T) > random.random()):
                 perm_current, speeds_current, obj_current = perm_new, speeds_new, obj_new
                 obj_dict_current = obj_dict_new
@@ -278,6 +386,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
                     if verbose:
                         print(f"  Iter {iter_count}: * New Best Solution: {obj_best:.2f}")
 
+            # Always record the current state
             history['costs'].append(obj_current)
             history['temps'].append(T)
             history['total_delays'].append(obj_dict_current.get('fall', 0))
@@ -286,21 +395,28 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
             avg_delay = sum(current_delays.values()) / len(current_delays) if current_delays else 0.0
             history['avg_delays'].append(avg_delay)
 
-            if iter_count >= max_iter: break
-        
-        if iter_count >= max_iter: break 
+            # NOTE: iter_count check moved to the start of the inner loop, but 
+            # the break condition here is still needed if max_iter is hit on the last evaluation
 
-        T = T * cool_rate 
+        if iter_count >= max_iter: break 
+        
+        # Only cool the temperature if it hasn't hit T_min yet
+        if T > T_min: 
+            T = T * cool_rate 
+        # Optional: If T has hit T_min, keep it constant at T_min for remaining iterations
+        # else:
+        #     T = T_min 
+        # (The original code's exponential acceptance uses T > 1e-9, so setting T=T_min is safe)
 
     if verbose:
         print("\n--- SA Finished ---")
         if iter_count >= max_iter: print(f"Termination: Reached max iteration/evaluation limit ({max_iter}).")
+        # Check if T has reached T_min at termination
         if T <= T_min: print(f"Termination: Reached minimum temperature ({T_min}). Final T={T:.2f}")
         print(f"Total evaluations: {iter_count}")
         print(f"Best Objective (f): {obj_best:.2f}")
     
     return perm_best, speeds_best, obj_best, history, geom_for_validation, tau_p_dict, iter_count
-
 
 if __name__ == "__main__":
     

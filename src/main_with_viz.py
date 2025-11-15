@@ -92,7 +92,7 @@ except ImportError as e:
 # 'GA_ANALYSIS':  N-run statistical analysis of GA (uses ga.NUM_GENERATIONS).
 # 'BOTH':         Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':   N-run statistical comparison of SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
-OPTIMIZATION_ALGORITHM = 'GA' 
+OPTIMIZATION_ALGORITHM = 'BOTH' 
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -212,6 +212,183 @@ def plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals):
             bbox=dict(boxstyle='round,pad=0.5', fc='white', alpha=0.8))
     plt.tight_layout()
     plt.show()
+
+def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_evals=None):
+    """Overlay SA and GA histories on a single 2x2 comparison grid.
+
+    Accepts history dicts produced by `run_sa` and `run_ga` (formats used in this project).
+    The function will look for common keys and plot matching series; missing series are skipped.
+    """
+    def first(h, options):
+        for k in options:
+            if isinstance(h, dict) and k in h:
+                return h[k]
+        return []
+
+    # Helper function to get SA x-axis and clipped series
+    def sa_align_and_clip(series, budget):
+        if not series:
+            return np.array([]), []
+        
+        x = np.arange(1, len(series) + 1)
+        
+        # If a budget is provided, clip both X and the series itself
+        if budget is not None:
+            clip_idx = np.searchsorted(x, budget, side='right')
+            if clip_idx > len(x):
+                clip_idx = len(x)
+            
+            x = x[:clip_idx]
+            series = series[:clip_idx]
+
+        return np.array(x), series
+    
+    # Helper function to align and clip GA series
+    def ga_align_and_clip(series, eval_points):
+        if not series or not eval_points:
+            return np.array([]), []
+        
+        # The number of generations is min(len(series), len(eval_points))
+        num_generations = min(len(series), len(eval_points))
+        
+        x_array = np.array(eval_points[:num_generations])
+        clipped_series = series[:num_generations]
+        
+        return x_array, clipped_series
+
+    costs_sa = first(history_sa, ['costs', 'best', 'best_f'])
+    avg_sa = first(history_sa, ['avg', 'avg_f'])
+    costs_ga = first(history_ga, ['best_f', 'costs', 'best'])
+    avg_ga = first(history_ga, ['avg_f', 'avg'])
+
+    avg_delays_sa = first(history_sa, ['avg_delays', 'avg_delays'])
+    avg_delays_ga = first(history_ga, ['best_avg_delay', 'avg_delays'])
+
+    total_delays_sa = first(history_sa, ['total_delays', 'total_delays'])
+    total_delays_ga = first(history_ga, ['best_fall', 'total_delays'])
+
+    emergency_delays_sa = first(history_sa, ['emergency_delays', 'emergency_delays'])
+    emergency_delays_ga = first(history_ga, ['best_fem', 'emergency_delays'])
+
+    # Prepare x-axis mapping to NUMBER OF FITNESS EVALUATIONS
+    # GA: history entries are per-generation. Map generation index to cumulative evaluation counts.
+    # Determine number of GA generations present in any series
+    ga_series_lengths = [
+        len(x) for x in (costs_ga, avg_ga, avg_delays_ga, total_delays_ga, emergency_delays_ga) if x
+    ]
+    ga_len = max(ga_series_lengths) if ga_series_lengths else 0
+    ga_eval_points = []
+    if ga_len > 0:
+        # Assuming POPULATION_SIZE and ELITISM_RATE are accessible globally
+        ga_evals_per_gen = (POPULATION_SIZE - int(POPULATION_SIZE * ELITISM_RATE))
+        if ga_evals_per_gen <= 0:
+            ga_evals_per_gen = 1
+        # cumulative eval counts at generation boundaries
+        ga_eval_points = [POPULATION_SIZE] + [POPULATION_SIZE + (i * ga_evals_per_gen) for i in range(1, ga_len)]
+        
+        # If a ga_evals budget is provided, clip to that budget
+        if ga_evals is not None and ga_eval_points:
+            # find index where points exceed budget
+            clip_idx = np.searchsorted(ga_eval_points, ga_evals, side='right')
+            pts = ga_eval_points[:clip_idx].copy()
+            
+            # if the budget is after the last point, add the budget point itself
+            if ga_evals > pts[-1]:
+                pts.append(ga_evals)
+            
+            ga_eval_points = pts
+
+    # SA x arrays and clipped series
+    x_costs_sa, costs_sa = sa_align_and_clip(costs_sa, sa_evals)
+    x_avg_sa, avg_sa = sa_align_and_clip(avg_sa, sa_evals)
+    x_avg_delays_sa, avg_delays_sa = sa_align_and_clip(avg_delays_sa, sa_evals)
+    x_total_delays_sa, total_delays_sa = sa_align_and_clip(total_delays_sa, sa_evals)
+    x_emergency_delays_sa, emergency_delays_sa = sa_align_and_clip(emergency_delays_sa, sa_evals)
+
+    # GA x arrays and clipped series
+    x_costs_ga, costs_ga = ga_align_and_clip(costs_ga, ga_eval_points)
+    x_avg_ga, avg_ga = ga_align_and_clip(avg_ga, ga_eval_points)
+    x_avg_delays_ga, avg_delays_ga = ga_align_and_clip(avg_delays_ga, ga_eval_points)
+    x_total_delays_ga, total_delays_ga = ga_align_and_clip(total_delays_ga, ga_eval_points)
+    x_emergency_delays_ga, emergency_delays_ga = ga_align_and_clip(emergency_delays_ga, ga_eval_points)
+    
+    fig, axs = plt.subplots(2, 2, figsize=(13, 9))
+    fig.suptitle(f"Overlay: {labels[0]} vs {labels[1]}")
+
+    # Top-left: Cost (mapped to fitness evaluation counts)
+    ax = axs[0, 0]
+    if x_costs_sa.size:
+        ax.plot(x_costs_sa, costs_sa, label=f"{labels[0]} best", color='tab:blue')
+    if x_costs_ga.size:
+        ax.plot(x_costs_ga, costs_ga, label=f"{labels[1]} best", color='tab:orange')
+    if x_avg_sa.size:
+        ax.plot(x_avg_sa, avg_sa, label=f"{labels[0]} avg", color='tab:cyan', linestyle=':')
+    if x_avg_ga.size:
+        ax.plot(x_avg_ga, avg_ga, label=f"{labels[1]} avg", color='tab:gray', linestyle='-.')
+    ax.set_title('Objective Cost vs Evaluations')
+    ax.set_xlabel('Number of Fitness Evaluations')
+    ax.set_ylabel('Cost (f)')
+    ax.grid(True)
+    ax.legend(loc='upper left')
+
+    # Top-right: Average Delay
+    ax = axs[0, 1]
+    if x_avg_delays_sa.size:
+        ax.plot(x_avg_delays_sa, avg_delays_sa, label=f"{labels[0]}", color='tab:green')
+    if x_avg_delays_ga.size:
+        ax.plot(x_avg_delays_ga, avg_delays_ga, label=f"{labels[1]}", color='tab:red')
+    ax.set_title('Average Delay per Vehicle')
+    ax.set_xlabel('Number of Fitness Evaluations')
+    ax.set_ylabel('Avg Delay (s)')
+    ax.grid(True)
+    ax.legend(loc='upper left')
+
+    # Bottom-left: Total Delay
+    ax = axs[1, 0]
+    if x_total_delays_sa.size:
+        ax.plot(x_total_delays_sa, total_delays_sa, label=f"{labels[0]}", color='tab:cyan')
+    if x_total_delays_ga.size:
+        ax.plot(x_total_delays_ga, total_delays_ga, label=f"{labels[1]}", color='tab:olive')
+    ax.set_title('Total Delay (f_all)')
+    ax.set_xlabel('Number of Fitness Evaluations')
+    ax.set_ylabel('Total Delay (s)')
+    ax.grid(True)
+    ax.legend(loc='upper left')
+
+    # Bottom-right: Emergency Delay
+    ax = axs[1, 1]
+    if x_emergency_delays_sa.size:
+        ax.plot(x_emergency_delays_sa, emergency_delays_sa, label=f"{labels[0]}", color='tab:blue')
+    if x_emergency_delays_ga.size:
+        ax.plot(x_emergency_delays_ga, emergency_delays_ga, label=f"{labels[1]}", color='tab:orange')
+    ax.set_title('Emergency Delay (f_em)')
+    ax.set_xlabel('Number of Fitness Evaluations')
+    ax.set_ylabel('Emergency Delay (s)')
+    ax.grid(True)
+    ax.legend(loc='upper left')
+
+    # Set common x-limits based on provided evaluation budgets or global comparison budget
+    x_max = None
+    if sa_evals is not None and ga_evals is not None:
+        x_max = max(sa_evals, ga_evals)
+    elif sa_evals is not None:
+        x_max = sa_evals
+    elif ga_evals is not None:
+        x_max = ga_evals
+    else:
+        try:
+            # Assuming COMPARISON_EVALUATION_BUDGET is accessible globally
+            x_max = COMPARISON_EVALUATION_BUDGET
+        except NameError:
+            x_max = None
+
+    if x_max is not None:
+        for ax in axs.flatten():
+            ax.set_xlim(0, x_max)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.show()
+
 
 def plot_experiment_results(results_data, labels):
     """
@@ -516,6 +693,13 @@ def main():
 
         plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals)
         print("  (Close all plot windows to finish)")
+        # Also show overlay comparison (costs/delays) if both histories available
+        try:
+            print("Generating overlay comparison (SA vs GA)...")
+            plot_compare(sa_history, ga_history, labels=('SA', 'GA'), sa_evals=sa_evals, ga_evals=ga_evals)
+        except Exception as e:
+            print(f"Could not generate overlay comparison plot: {e}")
+            traceback.print_exc()
 
     # --- MODIFICATION: Split Experiment logic ---
     elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS'):
