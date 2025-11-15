@@ -92,7 +92,7 @@ except ImportError as e:
 # 'GA_ANALYSIS':  N-run statistical analysis of GA (uses ga.NUM_GENERATIONS).
 # 'BOTH':         Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':   N-run statistical comparison of SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
-OPTIMIZATION_ALGORITHM = 'BOTH' 
+OPTIMIZATION_ALGORITHM = 'EXPERIMENT' 
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -751,7 +751,8 @@ def main():
             start_time_sa = time.time()
             for i in range(NUM_EXPERIMENT_RUNS):
                 print(f"  SA Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
-                _, _, sa_obj, sa_history, _, _, _ = run_sa(
+                (sa_perm, sa_speeds, sa_obj, sa_history, 
+                    sa_geom, sa_tau, sa_evals)= run_sa(
                     max_iter=sa_iter_limit,
                     initial_solution=common_sa_solution,
                     verbose=False 
@@ -872,6 +873,12 @@ def main():
             plot_sa_results(sa_best_history_overall)
             print("  Displaying performance dashboard for the BEST GA run...")
             plot_ga_performance_dashboard(ga_best_history_overall)
+            try:
+                print("Generating overlay comparison (SA vs GA)...")
+                plot_compare(sa_history, ga_history, labels=('SA', 'GA'), sa_evals=sa_evals, ga_evals=ga_evals)
+            except Exception as e:
+                print(f"Could not generate overlay comparison plot: {e}")
+                traceback.print_exc()
             
         elif OPTIMIZATION_ALGORITHM == 'SA_ANALYSIS':
             plot_experiment_results([sa_results], ['SA'])
