@@ -18,12 +18,15 @@ from sa import evaluate_solution, validate_speeds
 # =============================================================================
 # GA PARAMETERS
 # =============================================================================
-POPULATION_SIZE = 60
-NUM_GENERATIONS = 100
+POPULATION_SIZE = 300
+NUM_GENERATIONS = 150
 ELITISM_RATE = 0.1
-TOURNAMENT_SIZE = 5
-MUTATION_RATE_PERM = 0.1
+TOURNAMENT_SIZE = 20
+MUTATION_RATE_PERM = 0.3
 MUTATION_RATE_SPEED = 0.1
+
+# --- MODIFICATION: Added early stopping patience ---
+CONVERGENCE_PATIENCE = 25 # Stop if no improvement after 25 generations
 
 # =============================================================================
 # GA VISUALIZER CLASS
@@ -124,17 +127,17 @@ def create_initial_solution(geom):
         
         followers_in_queue = [v for v in queue if v.id != leader_in_queue.id and v.id in [p.id for p in initial_perm]]
         for v_follower in followers_in_queue:
-             current_max = min(v_max_global, last_speed)
-             current_min = min(v_min_global, current_max)
-             if current_min > current_max: current_min = current_max
-             new_speed = random.uniform(current_min, current_max + 1e-9)
-             initial_speeds_dict[v_follower.id] = new_speed
-             last_speed = new_speed
+            current_max = min(v_max_global, last_speed)
+            current_min = min(v_min_global, current_max)
+            if current_min > current_max: current_min = current_max
+            new_speed = random.uniform(current_min, current_max + 1e-9)
+            initial_speeds_dict[v_follower.id] = new_speed
+            last_speed = new_speed
 
     initial_speeds_list = []
     for v in initial_perm:
         if v.id not in initial_speeds_dict:
-             initial_speeds_dict[v.id] = random.uniform(v_min_global, v_max_global)
+            initial_speeds_dict[v.id] = random.uniform(v_min_global, v_max_global)
         initial_speeds_list.append(initial_speeds_dict[v.id])
 
     # print(f"  Initial GA Perm (IDs): {[v.id for v in initial_perm]}")
@@ -238,7 +241,6 @@ def mutate(individual: Individual, geom):
 # MAIN GA FUNCTION
 # =============================================================================
 
-# --- MODIFICATION: Added 'visualize_realtime' parameter ---
 def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualize_realtime=False):
     """Main Genetic Algorithm (GA) loop."""
     
@@ -285,13 +287,18 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
     best_solution = min(population, key=lambda ind: ind.fitness)
     best_fitness = best_solution.fitness
     
+    # --- MODIFICATION: Add tracker variables for convergence ---
+    # This tracks the best-ever fitness for stalling
+    last_best_fitness_for_stalling = best_fitness
+    generations_without_improvement = 0
+    # --- End Modification ---
+
     history['best_f'].append(best_solution.f)
     history['best_fem'].append(best_solution.f_em)
     history['best_fall'].append(best_solution.f_all)
     history['best_avg_delay'].append(best_solution.avg_delay)
     history['avg_f'].append(np.mean([ind.f for ind in population]))
 
-    # --- MODIFICATION: First visualization update ---
     if visualizer:
         visualizer.update(0, population, history)
 
@@ -306,7 +313,7 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
         if verbose: print(f"Running for {num_generations} generations based on evaluation budget.")
     else:
         num_generations = NUM_GENERATIONS
-        if verbose: print(f"Running for {num_generations} generations.")
+        if verbose: print(f"Running for {num_generations} generations (or until convergence).")
 
 
     for gen in range(num_generations):
@@ -339,6 +346,8 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
 
         current_best = min(population, key=lambda ind: ind.fitness)
         new_best_found = False
+        
+        # Check if the *all-time best* solution was improved
         if current_best.fitness < best_fitness:
             best_solution = copy.deepcopy(current_best)
             best_fitness = best_solution.fitness
@@ -352,7 +361,6 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
         
         avg_fitness_current = history['avg_f'][-1]
 
-        # --- MODIFICATION: Update Real-Time Plot ---
         if visualizer:
             visualizer.update(gen + 1, population, history)
 
@@ -361,6 +369,23 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
                 print(f"  Gen {gen+1}: * NEW BEST: {best_fitness:.2f} (Avg: {avg_fitness_current:.2f})")
             else:
                 print(f"  Gen {gen+1}:   Best: {best_fitness:.2f} (Avg: {avg_fitness_current:.2f})")
+
+        # --- MODIFICATION: Add convergence check ---
+        # Check if the *all-time best* has improved
+        if best_fitness < last_best_fitness_for_stalling:
+            last_best_fitness_for_stalling = best_fitness
+            generations_without_improvement = 0
+        else:
+            generations_without_improvement += 1
+
+        # Check for convergence *only if* not using a fixed eval budget
+        if max_evaluations is None and generations_without_improvement >= CONVERGENCE_PATIENCE:
+            if verbose:
+                print("\n--- STOPPING EARLY (Convergence) ---")
+                print(f"No improvement in {CONVERGENCE_PATIENCE} generations.")
+                print(f"Stopping at generation {gen + 1}.")
+            break # Exit the 'for gen' loop
+        # --- End Modification ---
 
         if max_evaluations is not None and eval_count >= max_evaluations:
             if verbose: print(f"Termination: Reached evaluation limit ({eval_count}).")
@@ -379,7 +404,6 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
         "delays": {} 
     }
 
-    # Keep window open for a moment if it was used
     if visualizer:
         print("Closing real-time visualization...")
         visualizer.close()
