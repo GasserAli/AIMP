@@ -18,12 +18,12 @@ from sa import evaluate_solution, validate_speeds
 # =============================================================================
 # GA PARAMETERS
 # =============================================================================
-POPULATION_SIZE = 300
+POPULATION_SIZE = 90 
 NUM_GENERATIONS = 150
-ELITISM_RATE = 0.1
-TOURNAMENT_SIZE = 20
-MUTATION_RATE_PERM = 0.3
-MUTATION_RATE_SPEED = 0.1
+ELITISM_RATE = 0.1 
+TOURNAMENT_SIZE = 20 
+MUTATION_RATE_PERM = 0.3 
+MUTATION_RATE_SPEED = 0.3
 
 # --- MODIFICATION: Added early stopping patience ---
 CONVERGENCE_PATIENCE = 25 # Stop if no improvement after 25 generations
@@ -223,17 +223,17 @@ def crossover(parent1: Individual, parent2: Individual, geom) -> Tuple[Individua
     return Individual(child1_perm, child1_speeds), Individual(child2_perm, child2_speeds)
 
 def mutate(individual: Individual, geom):
-    if random.random() < MUTATION_RATE_PERM:
-        idx1, idx2 = random.sample(range(len(individual.permutation)), 2)
-        individual.permutation[idx1], individual.permutation[idx2] = \
-            individual.permutation[idx2], individual.permutation[idx1]
+    # if random.random() < MUTATION_RATE_PERM:
+    idx1, idx2 = random.sample(range(len(individual.permutation)), 2)
+    individual.permutation[idx1], individual.permutation[idx2] = \
+        individual.permutation[idx2], individual.permutation[idx1]
 
-    if random.random() < MUTATION_RATE_SPEED:
-        idx = random.randrange(len(individual.speeds))
-        change = random.uniform(-2.0, 2.0)
-        v_min, v_max = config.velocity_range
-        individual.speeds[idx] = max(v_min, min(individual.speeds[idx] + change, v_max))
-        individual.speeds = validate_speeds(individual.permutation, individual.speeds, geom)
+# if random.random() < MUTATION_RATE_SPEED:
+    idx = random.randrange(len(individual.speeds))
+    change = random.uniform(-2.0, 2.0)
+    v_min, v_max = config.velocity_range
+    individual.speeds[idx] = max(v_min, min(individual.speeds[idx] + change, v_max))
+    individual.speeds = validate_speeds(individual.permutation, individual.speeds, geom)
         
     return individual
 
@@ -305,6 +305,7 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
     if verbose: print(f"Initial Best Fitness (f): {best_fitness:.2f}")
 
     num_elitism = int(POPULATION_SIZE * ELITISM_RATE)
+    num_mutations = int(POPULATION_SIZE * MUTATION_RATE_PERM)
     
     if max_evaluations is not None:
         evals_per_gen = POPULATION_SIZE - num_elitism
@@ -321,7 +322,7 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
         population.sort(key=lambda ind: ind.fitness)
         new_population = population[:num_elitism]
         
-        num_parents = POPULATION_SIZE - num_elitism
+        num_parents = POPULATION_SIZE - num_elitism - num_mutations
         parents = selection(population, num_parents)
         
         for i in range(0, num_parents, 2):
@@ -329,10 +330,17 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
             parent2 = parents[i+1] if (i+1) < len(parents) else parents[0] 
             
             child1, child2 = crossover(parent1, parent2, geom)
+            new_population.append(child1)
             
-            new_population.append(mutate(child1, geom))
             if len(new_population) < POPULATION_SIZE:
-                new_population.append(mutate(child2, geom))
+                new_population.append(child2)
+
+        for i in range(num_mutations):
+            if len(new_population) >= POPULATION_SIZE:
+                break
+            individual_to_mutate = random.choice(parents)
+            mutated_individual = mutate(copy.deepcopy(individual_to_mutate), geom)
+            new_population.append(mutated_individual)
 
         population = new_population
         
