@@ -18,12 +18,12 @@ from sa import evaluate_solution, validate_speeds
 # =============================================================================
 # GA PARAMETERS
 # =============================================================================
-POPULATION_SIZE = 300
-NUM_GENERATIONS = 150
-ELITISM_RATE = 0.1
-TOURNAMENT_SIZE = 20
-MUTATION_RATE_PERM = 0.3
-MUTATION_RATE_SPEED = 0.1
+POPULATION_SIZE = 150
+NUM_GENERATIONS = 300
+ELITISM_RATE = 0.07
+TOURNAMENT_SIZE = 80
+MUTATION_RATE_PERM = 0.7
+MUTATION_RATE_SPEED = 0.9
 
 # --- MODIFICATION: Added early stopping patience ---
 CONVERGENCE_PATIENCE = 25 # Stop if no improvement after 25 generations
