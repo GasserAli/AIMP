@@ -21,7 +21,7 @@ except ImportError:
 # --- End Import ---
 
 # --- SA Parameters ---
-T_INITIAL = 50.0
+T_INITIAL = 100.0
 T_MIN = 1.0
 COOLING_RATE = 0.99
 MAX_ITER_PER_TEMP = 2
