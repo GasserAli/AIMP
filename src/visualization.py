@@ -309,6 +309,7 @@ class IntersectionVisualization:
         self.ani = None
         self.time_text = self.ax.text(0.02, 0.97, '', color='white', transform=self.ax.transAxes, fontsize=14)
         self.t_max = 0.0
+        self.animation_speed = 1.0  # Speed multiplier for animation (1.0 = real-time)
         
         try:
             self.geom_for_drawing = Geometry()
@@ -403,66 +404,28 @@ class IntersectionVisualization:
     # ---
     # --- MODIFIED LOADING LOGIC (D3.js style) ---
     # ---
-    def load_schedule(self, best_perm, speeds_dict):
+    def load_schedule(self, perm_best, final_speeds_dict):
         """
-        Loads vehicles and creates animators based on D3-style logic.
-        This no longer requires 'final_schedule', 'final_tear', or 'tau_p_dict'.
+        Load and visualize the best solution.
+        final_speeds_dict: {vehicle_id: speed_value_or_list}
         """
-        if not speeds_dict:
-            print("Animation Error: Missing speeds data.")
-            return
-
-        # Build queue ordering (just like D3)
-        # We group vehicles by approach, then sort by permutation index
-        approach_queues = {'N': [], 'E': [], 'S': [], 'W': []}
+        print("Loading solution schedule...")
         
-        for v in best_perm:
-            if v.approach in approach_queues:
-                approach_queues[v.approach].append(v)
+        # Convert segment speeds to average speeds for visualization
+        speeds_dict_avg = {}
+        for vehicle_id, speed_val in final_speeds_dict.items():
+            if isinstance(speed_val, list):
+                speeds_dict_avg[vehicle_id] = sum(speed_val) / len(speed_val)
+            else:
+                speeds_dict_avg[vehicle_id] = speed_val
         
-        # We need to find the queue *index* for each vehicle.
-        queue_positions = {}
-        for approach, q_list in approach_queues.items():
-            # Find all vehicles in this queue, *in the order* they appear in best_perm
-            vehicles_in_queue = [v for v in best_perm if v.approach == approach]
-            for i, v in enumerate(vehicles_in_queue):
-                queue_positions[v.id] = i # 0, 1, 2...
-
-        self.vehicle_animators.clear()
-        vehicles_loaded = 0
-        self.t_max = 0.0 # Reset max time
-
-        for vehicle in best_perm:
-            if vehicle.priority_status:
-                v_color = self.EMERGENCY_COLOR
-            else:
-                v_color = self.APPROACH_COLORS.get(vehicle.approach, self.APPROACH_COLORS['DEFAULT'])
-
-            if vehicle.id in speeds_dict:
-                q_pos_index = queue_positions.get(vehicle.id, 0)
-                
-                # --- NEW: Calculate stagger time (like D3) ---
-                # Stagger start time by 1.0 second per vehicle in queue
-                stagger_start_time = q_pos_index * 1.0 
-                
-                animator = VehicleAnimator(vehicle, self.ax, v_color,
-                                           q_pos_index, stagger_start_time, speeds_dict)
-                
-                if animator.valid:
-                    self.vehicle_animators[vehicle.id] = animator
-                    vehicles_loaded += 1
-                    # Update total animation time
-                    self.t_max = max(self.t_max, animator.end_time_anim)
-                else:
-                    print(f"Debug: Failed to initialize animator for V {vehicle.id}.")
-            else:
-                print(f"Debug: Missing speed for V {vehicle.id}, skipping animator.")
-
-        if self.t_max <= 1e-6 and self.vehicle_animators:
-            self.t_max = 10.0 # Fallback duration
-
-        print(f"Smooth animation loaded: {vehicles_loaded} vehicles. Total Duration: {self.t_max:.2f}s.")
-
+        for vehicle in perm_best:
+            v_color = 'red' if vehicle.priority_status else 'blue'
+            animator = VehicleAnimator(vehicle, self.ax, v_color,
+                                      queue_pos=0, start_time=0, speeds_dict=speeds_dict_avg)
+            self.vehicle_animators[vehicle.id] = animator
+        
+        print(f"Loaded {len(self.vehicle_animators)} vehicles for animation.")
 
     def init_anim(self):
         """Init function for the animation."""

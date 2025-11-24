@@ -3,11 +3,13 @@ import random
 from vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 
 # --- Tunable Parameters ---
-velocity_range = (10,12)  # Minimum and maximum velocity for all vehicles
+velocity_range = (6,12)  # Minimum and maximum velocity for all vehicles
 tau = 1.0                # Headway time (in seconds)
 alpha = 1.0              # Weight for emergency vehicle delay
 beta = 1.0               # Weight for all vehicle delay
-safety_distance = 2    # Safety distance between vehicles (in meters)
+gamma = 500.0             # Weight for conflict penalties
+alpha_speed = 10.0        # Weight for speed incentive (reward higher speeds)
+safety_distance = 2      # Safety distance between vehicles (in meters)
 inter_conflict_distance = 2  # Distance between conflict points (in meters)
 
 # --- MODIFICATION: New randomly generated static list of 60 vehicles ---

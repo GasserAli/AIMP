@@ -86,7 +86,7 @@ from sa import (
     run_sa, 
     plot_results as plot_sa_results, 
     evaluate_solution,
-    validate_speeds,
+    validate_segment_speeds,
     create_initial_solution as sa_create_initial_solution
 )
 try:
@@ -108,18 +108,18 @@ except ImportError as e:
 # 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA (natural stops).
-OPTIMIZATION_ALGORITHM = 'GA' 
+OPTIMIZATION_ALGORITHM = 'SA' 
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
 # (Ignored for 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS' modes)
-VISUALIZATION_METHOD = 'matplotlib' 
+VISUALIZATION_METHOD = 'none' 
 
 # --- 3. ALGORITHM PARAMETERS ---
 # Budget for *direct comparison modes only* ('BOTH')
 COMPARISON_EVALUATION_BUDGET = 5000 
 # Number of runs for 'SA_ANALYSIS', 'GA_ANALYSIS', 'EXPERIMENT'
-NUM_EXPERIMENT_RUNS = 50  # 
+NUM_EXPERIMENT_RUNS = 50  
 RANDOM_SEED = 42 
 
 # SA Parameters (used for 'SA' and 'SA_ANALYSIS')

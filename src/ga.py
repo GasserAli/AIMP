@@ -13,7 +13,9 @@ from typing import Tuple
 import config
 from geometry import Geometry
 from vehicle import Vehicle
-from sa import evaluate_solution, validate_speeds
+from sa import evaluate_solution, validate_segment_speeds
+import objective
+from decoder import run_decoder
 
 # =============================================================================
 # GA PARAMETERS
@@ -145,9 +147,9 @@ def create_initial_solution(geom):
 
 
 class Individual:
-    def __init__(self, permutation: list[Vehicle], speeds: list[float]):
+    def __init__(self, permutation: list[Vehicle], segment_speeds_matrix: list[list[float]]):
         self.permutation = permutation
-        self.speeds = speeds
+        self.segment_speeds_matrix = segment_speeds_matrix  # 2D: [vehicle_idx][segment_idx]
         self.fitness = math.inf
         self.f = math.inf
         self.f_em = math.inf
@@ -155,7 +157,7 @@ class Individual:
         self.avg_delay = math.inf
 
     def calculate_fitness(self, geom, tau_p_dict):
-        obj_dict = evaluate_solution(self.permutation, self.speeds, geom, tau_p_dict)
+        obj_dict = evaluate_solution(self.permutation, self.segment_speeds_matrix, geom, tau_p_dict)
         self.f = obj_dict.get('f', math.inf)
         self.f_em = obj_dict.get('fem', math.inf)
         self.f_all = obj_dict.get('fall', math.inf)
@@ -213,12 +215,13 @@ def crossover(parent1: Individual, parent2: Individual, geom) -> Tuple[Individua
     child1_perm = [v_map[vid] for vid in child1_ids]
     child2_perm = [v_map[vid] for vid in child2_ids]
     
-    p1_speeds, p2_speeds = parent1.speeds, parent2.speeds
-    child1_speeds = [(s1 + s2) / 2.0 for s1, s2 in zip(p1_speeds, p2_speeds)]
-    child2_speeds = [(s1 + s2) / 2.0 for s1, s2 in zip(p2_speeds, p1_speeds)]
+    p1_speeds, p2_speeds = parent1.segment_speeds_matrix, parent2.segment_speeds_matrix
+    # Crossover: average speeds for each vehicle-segment pair
+    child1_speeds = [[(s1[j] + s2[j]) / 2.0 for j in range(5)] for s1, s2 in zip(p1_speeds, p2_speeds)]
+    child2_speeds = [[(s1[j] + s2[j]) / 2.0 for j in range(5)] for s1, s2 in zip(p2_speeds, p1_speeds)]
     
-    child1_speeds = validate_speeds(child1_perm, child1_speeds, geom)
-    child2_speeds = validate_speeds(child2_perm, child2_speeds, geom)
+    child1_speeds = validate_segment_speeds(child1_perm, child1_speeds, geom)
+    child2_speeds = validate_segment_speeds(child2_perm, child2_speeds, geom)
 
     return Individual(child1_perm, child1_speeds), Individual(child2_perm, child2_speeds)
 
@@ -229,13 +232,106 @@ def mutate(individual: Individual, geom):
             individual.permutation[idx2], individual.permutation[idx1]
 
     if random.random() < MUTATION_RATE_SPEED:
-        idx = random.randrange(len(individual.speeds))
+        vehicle_idx = random.randrange(len(individual.segment_speeds_matrix))
+        segment_idx = random.randrange(5)
         change = random.uniform(-2.0, 2.0)
         v_min, v_max = config.velocity_range
-        individual.speeds[idx] = max(v_min, min(individual.speeds[idx] + change, v_max))
-        individual.speeds = validate_speeds(individual.permutation, individual.speeds, geom)
+        individual.segment_speeds_matrix[vehicle_idx][segment_idx] = max(v_min, min(individual.segment_speeds_matrix[vehicle_idx][segment_idx] + change, v_max))
+        individual.segment_speeds_matrix = validate_segment_speeds(individual.permutation, individual.segment_speeds_matrix, geom)
         
     return individual
+
+def create_initial_population(pop_size, geom):
+    """Create initial population with segment speeds."""
+    population = []
+    for _ in range(pop_size):
+        perm = copy.deepcopy(config.pi)
+        random.shuffle(perm)
+        
+        v_min, v_max = config.velocity_range
+        segment_speeds_matrix = [
+            [random.uniform(v_min, v_max) for _ in range(5)]
+            for _ in range(len(perm))
+        ]
+        
+        # Validate C0 constraint
+        segment_speeds_matrix = validate_segment_speeds_ga(perm, segment_speeds_matrix, geom)
+        population.append((perm, segment_speeds_matrix))
+    
+    return population
+
+
+def validate_segment_speeds_ga(permutation, segment_speeds_matrix, geom):
+    """Same as SA version - enforces C0 per segment."""
+    v_min, v_max = config.velocity_range
+    validated = [row[:] for row in segment_speeds_matrix]
+    
+    for segment_idx in range(5):
+        for approach, queue in geom.entry_queues.items():
+            if not queue:
+                continue
+            
+            leader_idx = None
+            for v in queue:
+                perm_indices = [i for i, p in enumerate(permutation) if p.id == v.id]
+                if perm_indices:
+                    leader_idx = perm_indices[0]
+                    break
+            
+            if leader_idx is None:
+                continue
+            
+            last_speed = validated[leader_idx][segment_idx]
+            
+            for v in queue:
+                follower_indices = [i for i, p in enumerate(permutation) if p.id == v.id]
+                if not follower_indices or follower_indices[0] == leader_idx:
+                    continue
+                
+                follower_idx = follower_indices[0]
+                if validated[follower_idx][segment_idx] > last_speed:
+                    validated[follower_idx][segment_idx] = last_speed
+                last_speed = validated[follower_idx][segment_idx]
+    
+    return validated
+
+
+def mutate_individual_ga(perm, segment_speeds, geom):
+    """Mutate individual with segment speeds."""
+    v_min, v_max = config.velocity_range
+    
+    if random.random() < MUTATION_RATE_PERM:
+        idx1, idx2 = random.sample(range(len(perm)), 2)
+        perm[idx1], perm[idx2] = perm[idx2], perm[idx1]
+    
+    if random.random() < MUTATION_RATE_SPEED and segment_speeds:
+        vehicle_idx = random.randrange(len(segment_speeds))
+        segment_idx = random.randrange(5)
+        
+        change = random.uniform(-2.0, 2.0)
+        segment_speeds[vehicle_idx][segment_idx] += change
+        segment_speeds[vehicle_idx][segment_idx] = max(v_min, min(segment_speeds[vehicle_idx][segment_idx], v_max))
+    
+    segment_speeds = validate_segment_speeds_ga(perm, segment_speeds, geom)
+    return perm, segment_speeds
+
+
+def evaluate_individual_ga(perm, segment_speeds, geom, tau_p_dict):
+    """Evaluate individual fitness."""
+    try:
+        decoder_output = run_decoder(
+            permutation=perm,
+            segment_speeds_matrix=segment_speeds,
+            geom=geom,
+            tau_p_dict=tau_p_dict,
+            return_full_schedule=False
+        )
+        # NEW: Pass segment_speeds to objective
+        obj_dict = objective.calculate_objective(decoder_output, speeds_matrix=segment_speeds)
+        return obj_dict['f']
+    except:
+        return 99999.0
+
 
 # =============================================================================
 # MAIN GA FUNCTION
