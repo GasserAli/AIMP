@@ -1,11 +1,4 @@
-# File: src/ga.py  (UPDATED)
-# - Changes:
-#   * Use speed penalty (low speed => penalty) so optimizer finds balanced speeds
-#   * Bias leader initial speeds upward (to avoid collapsed start)
-#   * Improve crossover/mutation for speeds while validating C0 no-catch-up constraint
-#   * Old (original) lines are commented out and replaced with new logic
-#   * Keep compatibility with evaluate_solution(...) from sa.py which expects (permutation, speeds, geom, tau_p_dict)
-
+# File: src/ga.py
 import math
 import random
 import copy
@@ -20,18 +13,17 @@ from typing import Tuple
 import config
 from geometry import Geometry
 from vehicle import Vehicle
-# The GA uses helper functions from sa.py (evaluate_solution & validate_speeds)
 from sa import evaluate_solution, validate_speeds
 
 # =============================================================================
 # GA PARAMETERS
 # =============================================================================
 POPULATION_SIZE = 150
-NUM_GENERATIONS = 200
-ELITISM_RATE = 0.1
+NUM_GENERATIONS = 150
+ELITISM_RATE = 0.07
 TOURNAMENT_SIZE = 80
-MUTATION_RATE_PERM = 0.5
-MUTATION_RATE_SPEED = 0.2
+MUTATION_RATE_PERM = 0.7
+MUTATION_RATE_SPEED = 0.5
 
 # --- MODIFICATION: Added early stopping patience ---
 CONVERGENCE_PATIENCE = 25 # Stop if no improvement after 25 generations
@@ -89,6 +81,7 @@ class GAVisualizer:
         fitness_values = [ind.fitness for ind in population]
         
         # Normalize colors based on current generation's range
+        # This highlights the "best" vs "worst" in the CURRENT pool
         v_min = min(fitness_values)
         v_max = max(fitness_values)
         norm = mcolors.Normalize(vmin=v_min, vmax=v_max)
@@ -114,12 +107,6 @@ class GAVisualizer:
 # =============================================================================
 
 def create_initial_solution(geom):
-    """
-    Create a single initial (permutation, speeds) pair.
-    Changes from original:
-      - Leader speeds are biased upward slightly to avoid entire lane starting at v_min.
-      - Followers are sampled <= leader (C0 constraint still enforced).
-    """
     initial_perm = copy.deepcopy(config.pi)
     random.shuffle(initial_perm)
     
@@ -127,36 +114,23 @@ def create_initial_solution(geom):
     v_min_global, v_max_global = config.velocity_range
 
     for approach, queue in geom.entry_queues.items():
-        if not queue: 
-            continue
-
+        if not queue: continue
         leader_in_queue = None
         for v in queue:
             if v.id in [p.id for p in initial_perm]:
                 leader_in_queue = v
                 break
-        if leader_in_queue is None: 
-            continue 
+        if leader_in_queue is None: continue 
 
-        # -----------------------------
-        # OLD (original) leader init:
-        # last_speed = random.uniform(v_min_global, v_max_global)
-        # -----------------------------
-        # NEW: bias leader speeds upward (heuristic)
-        last_speed = random.uniform(v_min_global + 0.25*(v_max_global - v_min_global), v_max_global)
+        last_speed = random.uniform(v_min_global, v_max_global)
         initial_speeds_dict[leader_in_queue.id] = last_speed
         
         followers_in_queue = [v for v in queue if v.id != leader_in_queue.id and v.id in [p.id for p in initial_perm]]
         for v_follower in followers_in_queue:
-            # keep follower <= predecessor (C0)
             current_max = min(v_max_global, last_speed)
-            # OLD follower logic (kept for reference)
-            # current_min = min(v_min_global, current_max)
-            # if current_min > current_max: current_min = current_max
-            # new_speed = random.uniform(current_min, current_max + 1e-9)
-
-            # NEW: sample followers within [v_min, current_max]
-            new_speed = random.uniform(v_min_global, current_max)
+            current_min = min(v_min_global, current_max)
+            if current_min > current_max: current_min = current_max
+            new_speed = random.uniform(current_min, current_max + 1e-9)
             initial_speeds_dict[v_follower.id] = new_speed
             last_speed = new_speed
 
@@ -166,6 +140,7 @@ def create_initial_solution(geom):
             initial_speeds_dict[v.id] = random.uniform(v_min_global, v_max_global)
         initial_speeds_list.append(initial_speeds_dict[v.id])
 
+    # print(f"  Initial GA Perm (IDs): {[v.id for v in initial_perm]}")
     return initial_perm, initial_speeds_list
 
 
@@ -180,7 +155,6 @@ class Individual:
         self.avg_delay = math.inf
 
     def calculate_fitness(self, geom, tau_p_dict):
-        # NOTE: evaluate_solution expects speeds to be passed to objective internally.
         obj_dict = evaluate_solution(self.permutation, self.speeds, geom, tau_p_dict)
         self.f = obj_dict.get('f', math.inf)
         self.f_em = obj_dict.get('fem', math.inf)
@@ -192,6 +166,7 @@ class Individual:
 
 def create_initial_population(size, geom) -> list[Individual]:
     population = []
+    # print(f"Creating initial population (Size: {size})...")
     for _ in range(size):
         perm, speeds = create_initial_solution(geom)
         population.append(Individual(perm, speeds))
@@ -206,11 +181,6 @@ def selection(population: list[Individual], num_to_select) -> list[Individual]:
     return selected
 
 def crossover(parent1: Individual, parent2: Individual, geom) -> Tuple[Individual, Individual]:
-    """
-    Permutation crossover (order crossover) is preserved.
-    For speeds, instead of copying one parent's speeds, we blend them (average)
-    and then enforce validate_speeds to ensure C0 constraint.
-    """
     size = len(parent1.permutation)
     p1_perm, p2_perm = parent1.permutation, parent2.permutation
     v_map = {v.id: v for v in p1_perm}
@@ -243,75 +213,26 @@ def crossover(parent1: Individual, parent2: Individual, geom) -> Tuple[Individua
     child1_perm = [v_map[vid] for vid in child1_ids]
     child2_perm = [v_map[vid] for vid in child2_ids]
     
-    # --- OLD speed crossover (original):
-    # p1_speeds, p2_speeds = parent1.speeds, parent2.speeds
-    # child1_speeds = [(s1 + s2) / 2.0 for s1, s2 in zip(p1_speeds, p2_speeds)]
-    # child2_speeds = [(s1 + s2) / 2.0 for s1, s2 in zip(p2_speeds, p1_speeds)]
-    #
-    # Reason: simple averaging allowed speeds to trend to extremes under speed reward.
-    # -------------------------------------------------
-
-    # NEW: Blend speeds with small controlled randomness to avoid runaway to max
     p1_speeds, p2_speeds = parent1.speeds, parent2.speeds
-    child1_speeds = []
-    child2_speeds = []
-    v_min, v_max = config.velocity_range
-    for s1, s2 in zip(p1_speeds, p2_speeds):
-        # weighted average with slight noise
-        w = random.uniform(0.4, 0.6)
-        base1 = w * s1 + (1-w) * s2
-        base2 = w * s2 + (1-w) * s1
-        # small jitter to keep diversity, but not too big to explode speeds
-        jitter1 = random.uniform(-0.25, 0.25)
-        jitter2 = random.uniform(-0.25, 0.25)
-        child1_speeds.append(max(v_min, min(v_max, base1 + jitter1)))
-        child2_speeds.append(max(v_min, min(v_max, base2 + jitter2)))
-
-    # Enforce C0 no-catch-up constraint using validate_speeds
+    child1_speeds = [(s1 + s2) / 2.0 for s1, s2 in zip(p1_speeds, p2_speeds)]
+    child2_speeds = [(s1 + s2) / 2.0 for s1, s2 in zip(p2_speeds, p1_speeds)]
+    
     child1_speeds = validate_speeds(child1_perm, child1_speeds, geom)
     child2_speeds = validate_speeds(child2_perm, child2_speeds, geom)
 
     return Individual(child1_perm, child1_speeds), Individual(child2_perm, child2_speeds)
 
 def mutate(individual: Individual, geom):
-    """
-    Mutation does:
-      - permutation swap (with probability MUTATION_RATE_PERM)
-      - speed mutation (with probability MUTATION_RATE_SPEED)
-    For speed mutation we:
-      - with high prob do a small local adjustment
-      - with some small prob reassign a random speed (explore)
-    Finally, validate speeds to enforce C0.
-    """
     if random.random() < MUTATION_RATE_PERM:
         idx1, idx2 = random.sample(range(len(individual.permutation)), 2)
-        # --- OLD:
-        # individual.permutation[idx1], individual.permutation[idx2] = \
-        #     individual.permutation[idx2], individual.permutation[idx1]
-        # ------------------------------------------------------------
-        # NEW: swap permutation AND also swap speeds (to keep vehicle-speed pairing)
         individual.permutation[idx1], individual.permutation[idx2] = \
             individual.permutation[idx2], individual.permutation[idx1]
-        individual.speeds[idx1], individual.speeds[idx2] = \
-            individual.speeds[idx2], individual.speeds[idx1]
 
     if random.random() < MUTATION_RATE_SPEED:
         idx = random.randrange(len(individual.speeds))
+        change = random.uniform(-2.0, 2.0)
         v_min, v_max = config.velocity_range
-        # OLD simple mutation:
-        # change = random.uniform(-2.0, 2.0)
-        # individual.speeds[idx] = max(v_min, min(individual.speeds[idx] + change, v_max))
-        # ------------------------------------------------------------
-        # NEW: two-level mutation for fairness
-        if random.random() < 0.8:
-            # smaller local mutation to allow fine tuning
-            change = random.uniform(-1.0, 1.0)
-            individual.speeds[idx] = max(v_min, min(individual.speeds[idx] + change, v_max))
-        else:
-            # exploratory reassign
-            individual.speeds[idx] = random.uniform(v_min, v_max)
-
-        # enforce safety constraint after mutation
+        individual.speeds[idx] = max(v_min, min(individual.speeds[idx] + change, v_max))
         individual.speeds = validate_speeds(individual.permutation, individual.speeds, geom)
         
     return individual
@@ -325,7 +246,7 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
     
     visualizer = None
     if visualize_realtime:
-        if verbose: print("Initializing Real-Time GA Visualizer...")
+        print("Initializing Real-Time GA Visualizer...")
         visualizer = GAVisualizer()
 
     if verbose:
@@ -367,6 +288,7 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
     best_fitness = best_solution.fitness
     
     # --- MODIFICATION: Add tracker variables for convergence ---
+    # This tracks the best-ever fitness for stalling
     last_best_fitness_for_stalling = best_fitness
     generations_without_improvement = 0
     # --- End Modification ---
@@ -449,18 +371,20 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
                 print(f"  Gen {gen+1}:   Best: {best_fitness:.2f} (Avg: {avg_fitness_current:.2f})")
 
         # --- MODIFICATION: Add convergence check ---
+        # Check if the *all-time best* has improved
         if best_fitness < last_best_fitness_for_stalling:
             last_best_fitness_for_stalling = best_fitness
             generations_without_improvement = 0
         else:
             generations_without_improvement += 1
 
+        # Check for convergence *only if* not using a fixed eval budget
         if max_evaluations is None and generations_without_improvement >= CONVERGENCE_PATIENCE:
             if verbose:
                 print("\n--- STOPPING EARLY (Convergence) ---")
                 print(f"No improvement in {CONVERGENCE_PATIENCE} generations.")
                 print(f"Stopping at generation {gen + 1}.")
-            break
+            break # Exit the 'for gen' loop
         # --- End Modification ---
 
         if max_evaluations is not None and eval_count >= max_evaluations:
@@ -472,17 +396,23 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
         print(f"Total generations: {gen + 1}")
         print(f"Total evaluations: {eval_count}")
         print(f"Best Objective (f): {best_fitness:.2f}")
-        # Print vehicle speeds for the best solution
+        print(f"Best speed range: {min(best_solution.speeds):.3f}–{max(best_solution.speeds):.3f}")
+        # Print full list of vehicle IDs and their corresponding final speeds
         try:
-            perm_ids = [v.id for v in best_solution.permutation]
+            ids = [v.id for v in best_solution.permutation]
             speeds_str = [f"{s:.3f}" for s in best_solution.speeds]
-            print("Final permutation (vehicle IDs):", perm_ids)
+            approach_str = [v.approach for v in best_solution.permutation]
+            print("Final permutation (vehicle IDs):", ids)
             print("Final speeds (m/s):", speeds_str)
+            print("Final approaches:", approach_str)
+            # Pair them for clearer output
+            paired = [f"ID {vid}: {spd} m/s" for vid, spd in zip(ids, speeds_str)]
             print("Final speeds per vehicle:")
-            for vid, sp in zip(perm_ids, speeds_str):
-                print("  ", f"ID {vid}: {sp} m/s")
+            for p in paired:
+                print("  ", p)
         except Exception:
-            print("Could not print detailed GA speeds (unexpected error).")
+            # Fallback: if something unexpected, still return gracefully
+            print("Could not print detailed speeds (unexpected error).")
     
     best_solution_obj_dict = {
         "f": best_solution.f,

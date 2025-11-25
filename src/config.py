@@ -9,7 +9,7 @@ alpha = 1              # Weight for emergency vehicle delay
 beta = 1               # Weight for all vehicle delay
 gamma = 3   # <---- NEW: speed reward weight (tune 0.1 to 2.0)
 safety_distance = 3    # Safety distance between vehicles (in meters)
-inter_conflict_distance = 3  # Distance between conflict points (in meters)
+inter_conflict_distance = 6  # Distance between conflict points (in meters)
 
 # --- MODIFICATION: New randomly generated static list of 60 vehicles ---
 pi = [
