@@ -30,7 +30,6 @@ from sa import evaluate_solution, validate_speeds
 NUM_ANTS = 50                    # m: Number of ants per iteration
 NUM_ITERATIONS = 100             # Number of ACO iterations
 ALPHA = 1.0                      # α: Pheromone importance
-BETA = 2.0                       # β: Heuristic importance  
 RHO = 0.3                        # ρ: Evaporation rate (0 < ρ < 1)
 Q = 100.0                        # Q: Pheromone deposit constant
 TAU_INITIAL = 0.1                # Initial pheromone level
@@ -196,7 +195,7 @@ class ACOGraph:
 # SOLUTION CONSTRUCTION
 # =============================================================================
 def construct_ant_solution(ant: Ant, graph: ACOGraph, geom: Geometry, 
-                          alpha: float, beta: float, tau_p_dict: Dict) -> None:
+                          alpha: float, tau_p_dict: Dict) -> None:
     """
     Constructs a complete solution for one ant using probabilistic selection.
     
@@ -221,11 +220,8 @@ def construct_ant_solution(ant: Ant, graph: ACOGraph, geom: Geometry,
             
             # Pheromone factor
             tau_val = graph.tau[position][v_idx]
-            # Heuristic factor
-            eta_val = graph.eta[position][v_idx]
-            
             # Combined attractiveness
-            attractiveness = (tau_val ** alpha) * (eta_val ** beta)
+            attractiveness = (tau_val ** alpha) 
             probs.append(attractiveness)
         
         # Normalize to probabilities
@@ -349,7 +345,7 @@ def save_aco_run_summary(filename: str, run_summary: Dict):
                 writer = csv.writer(f)
                 writer.writerow([
                     'Timestamp', 'Num_Ants', 'Max_Iterations', 'Iterations_Run',
-                    'Alpha', 'Beta', 'Rho', 'Q', 'Tau_Initial', 'Elitist_Weight',
+                    'Alpha', 'Rho', 'Q', 'Tau_Initial', 'Elitist_Weight',
                     'Convergence_Patience', 'Best_Fitness', 'Emergency_Delay', 
                     'Total_Delay', 'Avg_Delay_Per_Vehicle', 'Total_Evaluations',
                     'Early_Stopped', 'Runtime_Seconds'
@@ -363,7 +359,6 @@ def save_aco_run_summary(filename: str, run_summary: Dict):
                 run_summary['max_iterations'],
                 run_summary['iterations_run'],
                 run_summary['alpha'],
-                run_summary['beta'],
                 run_summary['rho'],
                 run_summary['q'],
                 run_summary['tau_initial'],
@@ -428,7 +423,6 @@ def run_aco(max_iterations: int = None,
         print(f"  Number of Ants:        {NUM_ANTS}")
         print(f"  Max Iterations:        {max_iterations}")
         print(f"   (pheromone weight):  {ALPHA}")
-        print(f"   (heuristic weight):  {BETA}")
         print(f"   (evaporation):       {RHO}")
         print(f"  q (deposit constant):  {Q}")
         print("="*70 + "\n")
@@ -488,7 +482,7 @@ def run_aco(max_iterations: int = None,
         iter_best_ant = None
         
         for ant in ants:
-            construct_ant_solution(ant, graph, geom, ALPHA, BETA, tau_p_dict)
+            construct_ant_solution(ant, graph, geom, ALPHA, tau_p_dict)
             eval_count += 1
             
             # Track iteration best
@@ -602,7 +596,6 @@ def run_aco(max_iterations: int = None,
             'max_iterations': max_iterations,
             'iterations_run': len(history['best_f']),
             'alpha': ALPHA,
-            'beta': BETA,
             'rho': RHO,
             'q': Q,
             'tau_initial': TAU_INITIAL,
@@ -721,7 +714,7 @@ def create_initial_population(num_ants: int, geom: Geometry) -> List[Ant]:
     
     for i in range(num_ants):
         ant = Ant(i)
-        construct_ant_solution(ant, graph, geom, ALPHA, BETA, tau_p_dict)
+        construct_ant_solution(ant, graph, geom, ALPHA, tau_p_dict)
         ants.append(ant)
     
     return ants

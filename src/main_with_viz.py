@@ -157,14 +157,13 @@ else:
 if ACO_IMPORTED:
     from aco import (
         NUM_ANTS, NUM_ITERATIONS as ACO_NUM_ITERATIONS, ALPHA as ACO_ALPHA,
-        BETA as ACO_BETA, RHO, Q
+        RHO, Q
     )
 else:
     # Default values if ACO not imported
     NUM_ANTS = 50
     ACO_NUM_ITERATIONS = 100
     ACO_ALPHA = 1.0
-    ACO_BETA = 2.0
     RHO = 0.1
     Q = 100.0
 # =============================================================================
@@ -598,7 +597,7 @@ def save_experiment_summary(timestamp, all_stats):
                     'Avg Evals Used', # <-- This is the important change
                     'SA_T_Init', 'SA_T_Min', 'SA_Cool_Rate', 'SA_Iter_Per_Temp',
                     'GA_Pop_Size', 'GA_Generations', 'GA_Elitism', 'GA_Tourn_Size', 'GA_Mut_Perm', 'GA_Mut_Speed',
-                    'ACO_Num_Ants', 'ACO_Num_Iterations', 'ACO_Alpha', 'ACO_Beta', 'ACO_Rho', 'ACO_Q'
+                    'ACO_Num_Ants', 'ACO_Num_Iterations', 'ACO_Alpha', 'ACO_Rho', 'ACO_Q'
                 ])
             
             if 'SA' in all_stats:
@@ -626,7 +625,7 @@ def save_experiment_summary(timestamp, all_stats):
                     NUM_EXPERIMENT_RUNS, stats['avg_evals'],
                     'N/A', 'N/A', 'N/A', 'N/A',
                     'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A',
-                    NUM_ANTS, ACO_NUM_ITERATIONS, ACO_ALPHA, ACO_BETA, RHO, Q
+                    NUM_ANTS, ACO_NUM_ITERATIONS, ACO_ALPHA, RHO, Q
                 ])
         print(f"  Successfully appended summary to: {SUMMARY_FILENAME}")
     except IOError as e:
