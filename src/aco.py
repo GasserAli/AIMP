@@ -13,6 +13,9 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 import traceback
+import csv
+import os
+from datetime import datetime
 from typing import List, Dict, Tuple
 
 # --- Import Project Files ---
@@ -25,10 +28,10 @@ from sa import evaluate_solution, validate_speeds
 # ACO PARAMETERS (Ant System)
 # =============================================================================
 NUM_ANTS = 50                    # m: Number of ants per iteration
-NUM_ITERATIONS = 5000             # Number of ACO iterations
+NUM_ITERATIONS = 100             # Number of ACO iterations
 ALPHA = 1.0                      # α: Pheromone importance
 BETA = 2.0                       # β: Heuristic importance  
-RHO = 0.1                        # ρ: Evaporation rate (0 < ρ < 1)
+RHO = 0.3                        # ρ: Evaporation rate (0 < ρ < 1)
 Q = 100.0                        # Q: Pheromone deposit constant
 TAU_INITIAL = 0.1                # Initial pheromone level
 ELITIST_WEIGHT = 2.0             # Weight for best-so-far solution (elitist AS)
@@ -300,11 +303,93 @@ def _generate_speeds_for_permutation(permutation: List[Vehicle], geom: Geometry)
 
 
 # =============================================================================
+# CSV LOGGING FUNCTIONS
+# =============================================================================
+def save_aco_iteration_log(filename: str, iteration_data: List[Dict]):
+    """
+    Saves detailed iteration-by-iteration ACO performance data to CSV.
+    
+    Parameters
+    ----------
+    filename : str
+        Output CSV filename
+    iteration_data : List[Dict]
+        List of dictionaries containing iteration metrics
+    """
+    if not iteration_data:
+        return
+    
+    try:
+        with open(filename, mode='w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=iteration_data[0].keys())
+            writer.writeheader()
+            writer.writerows(iteration_data)
+        print(f"  Successfully saved iteration log to: {filename}")
+    except IOError as e:
+        print(f"  ERROR: Could not save iteration log CSV. {e}")
+
+
+def save_aco_run_summary(filename: str, run_summary: Dict):
+    """
+    Saves ACO run summary with parameters and final results.
+    
+    Parameters
+    ----------
+    filename : str
+        Output CSV filename
+    run_summary : Dict
+        Dictionary containing run parameters and results
+    """
+    file_exists = os.path.isfile(filename)
+    
+    try:
+        with open(filename, mode='a', newline='') as f:
+            if not file_exists:
+                # Create header
+                writer = csv.writer(f)
+                writer.writerow([
+                    'Timestamp', 'Num_Ants', 'Max_Iterations', 'Iterations_Run',
+                    'Alpha', 'Beta', 'Rho', 'Q', 'Tau_Initial', 'Elitist_Weight',
+                    'Convergence_Patience', 'Best_Fitness', 'Emergency_Delay', 
+                    'Total_Delay', 'Avg_Delay_Per_Vehicle', 'Total_Evaluations',
+                    'Early_Stopped', 'Runtime_Seconds'
+                ])
+            
+            # Write run data
+            writer = csv.writer(f)
+            writer.writerow([
+                run_summary['timestamp'],
+                run_summary['num_ants'],
+                run_summary['max_iterations'],
+                run_summary['iterations_run'],
+                run_summary['alpha'],
+                run_summary['beta'],
+                run_summary['rho'],
+                run_summary['q'],
+                run_summary['tau_initial'],
+                run_summary['elitist_weight'],
+                run_summary['convergence_patience'],
+                run_summary['best_fitness'],
+                run_summary['emergency_delay'],
+                run_summary['total_delay'],
+                run_summary['avg_delay_per_vehicle'],
+                run_summary['total_evaluations'],
+                run_summary['early_stopped'],
+                run_summary['runtime_seconds']
+            ])
+        print(f"  Successfully appended run summary to: {filename}")
+    except IOError as e:
+        print(f"  ERROR: Could not save run summary CSV. {e}")
+
+
+# =============================================================================
 # MAIN ACO ALGORITHM
 # =============================================================================
 def run_aco(max_iterations: int = None,
             visualize_realtime: bool = False,
-            verbose: bool = True) -> Tuple:
+            verbose: bool = True,
+            log_to_csv: bool = False,
+            csv_prefix: str = "aco_run") -> Tuple:
     """
     Run the Ant Colony Optimization algorithm.
     
@@ -316,6 +401,10 @@ def run_aco(max_iterations: int = None,
         Whether to show real-time visualization
     verbose : bool
         Whether to print progress messages
+    log_to_csv : bool
+        Whether to log iteration data and run summary to CSV files
+    csv_prefix : str
+        Prefix for CSV filenames (default: "aco_run")
     
     Returns
     -------
@@ -388,6 +477,10 @@ def run_aco(max_iterations: int = None,
     no_improvement_count = 0
     eval_count = 0
     
+    # CSV logging data collection
+    iteration_data = []
+    start_time = datetime.now()
+    
     # Main ACO loop
     for iteration in range(max_iterations):
         # Phase 1: Solution Construction
@@ -456,6 +549,22 @@ def run_aco(max_iterations: int = None,
             history['best_fall'].append(0)
             history['best_fem'].append(0)
         
+        # Collect iteration data for CSV logging
+        if log_to_csv:
+            iter_data = {
+                'iteration': iteration + 1,
+                'best_f': best_fitness,
+                'iter_best_f': iter_best_fitness,
+                'pher_max': pher_max,
+                'pher_avg': pher_avg,
+                'pher_min': pher_min,
+                'best_avg_delay': history['best_avg_delay'][-1],
+                'best_fall': history['best_fall'][-1],
+                'best_fem': history['best_fem'][-1],
+                'eval_count': eval_count
+            }
+            iteration_data.append(iter_data)
+        
         # Update visualization
         if visualizer:
             visualizer.update(iteration, history)
@@ -475,6 +584,46 @@ def run_aco(max_iterations: int = None,
     # Close visualizer
     if visualizer:
         visualizer.close()
+    
+    # Calculate runtime
+    end_time = datetime.now()
+    runtime_seconds = (end_time - start_time).total_seconds()
+    
+    # Save CSV logs if requested
+    if log_to_csv:
+        # Save iteration log
+        iter_log_filename = f"{csv_prefix}_iterations.csv"
+        save_aco_iteration_log(iter_log_filename, iteration_data)
+        
+        # Create and save run summary
+        run_summary = {
+            'timestamp': start_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'num_ants': NUM_ANTS,
+            'max_iterations': max_iterations,
+            'iterations_run': len(history['best_f']),
+            'alpha': ALPHA,
+            'beta': BETA,
+            'rho': RHO,
+            'q': Q,
+            'tau_initial': TAU_INITIAL,
+            'elitist_weight': ELITIST_WEIGHT,
+            'convergence_patience': CONVERGENCE_PATIENCE,
+            'best_fitness': best_fitness,
+            'emergency_delay': best_obj_dict.get('fem', 0) if best_obj_dict else 0,
+            'total_delay': best_obj_dict.get('fall', 0) if best_obj_dict else 0,
+            'avg_delay_per_vehicle': best_obj_dict.get('fall', 0) / len(all_vehicles) if best_obj_dict else 0,
+            'total_evaluations': eval_count,
+            'early_stopped': len(history['best_f']) < max_iterations,
+            'runtime_seconds': runtime_seconds
+        }
+        
+        run_summary_filename = f"{csv_prefix}_summary.csv"
+        save_aco_run_summary(run_summary_filename, run_summary)
+        
+        if verbose:
+            print(f"\n  CSV logs saved:")
+            print(f"    - {iter_log_filename}")
+            print(f"    - {run_summary_filename}")
     
     if verbose:
         print("\n" + "="*70)
@@ -584,12 +733,14 @@ def create_initial_population(num_ants: int, geom: Geometry) -> List[Ant]:
 if __name__ == "__main__":
     print("Testing ACO module independently...")
     
-    # Run ACO with visualization
+    # Run ACO with visualization and CSV logging
     (best_perm, best_speeds, best_fitness, history, 
      geom, tau_p_dict, best_obj_dict, eval_count) = run_aco(
-        max_iterations=50,
+        max_iterations=None,
         visualize_realtime=True,
-        verbose=True
+        verbose=True,
+        log_to_csv=True,
+        csv_prefix="aco_test_run"
     )
     
     print("\n--- BEST SOLUTION FOUND ---")

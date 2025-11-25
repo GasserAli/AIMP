@@ -134,12 +134,71 @@ from aco import run_aco, plot_aco_performance_dashboard
  geom, tau_p_dict, best_obj_dict, eval_count) = run_aco(
     max_iterations=100,
     visualize_realtime=True,
-    verbose=True
+    verbose=True,
+    log_to_csv=True,              # Enable CSV logging
+    csv_prefix="my_aco_run"       # Prefix for CSV files
 )
 
 # Plot results
 plot_aco_performance_dashboard(history)
 ```
+
+### 4. CSV Logging
+
+ACO includes comprehensive CSV logging to track algorithm parameters and performance metrics.
+
+#### Enable Logging
+
+```python
+# Standalone
+run_aco(
+    max_iterations=50,
+    log_to_csv=True,
+    csv_prefix="aco_experiment_1"
+)
+```
+
+#### Generated Files
+
+Two CSV files are created:
+
+1. **`{prefix}_iterations.csv`**: Per-iteration metrics
+   - Columns: `iteration`, `best_f`, `iter_best_f`, `pher_max`, `pher_avg`, `pher_min`, `best_avg_delay`, `best_fall`, `best_fem`, `eval_count`
+   - One row per iteration showing convergence and pheromone dynamics
+
+2. **`{prefix}_summary.csv`**: Run-level summary
+   - Columns: `Timestamp`, `Num_Ants`, `Max_Iterations`, `Iterations_Run`, `Alpha`, `Beta`, `Rho`, `Q`, `Tau_Initial`, `Elitist_Weight`, `Convergence_Patience`, `Best_Fitness`, `Emergency_Delay`, `Total_Delay`, `Avg_Delay_Per_Vehicle`, `Total_Evaluations`, `Early_Stopped`, `Runtime_Seconds`
+   - Appends one row per run for multi-run experiments
+
+#### Example Output
+
+**Iteration Log** (`aco_test_run_iterations.csv`):
+```csv
+iteration,best_f,iter_best_f,pher_max,pher_avg,pher_min,best_avg_delay,best_fall,best_fem,eval_count
+1,557.0,557.0,1.606,0.253,0.09,10.41,520.33,36.67,50
+2,541.0,541.0,3.952,0.395,0.081,10.04,502.0,39.0,100
+...
+```
+
+**Run Summary** (`aco_test_run_summary.csv`):
+```csv
+Timestamp,Num_Ants,Max_Iterations,Iterations_Run,Alpha,Beta,Rho,Q,...
+2025-11-25 22:08:43,50,50,50,1.0,2.0,0.1,100.0,...
+```
+
+#### Integration with main_with_viz.py
+
+The main runner also logs to:
+- `experiment_summary_log.csv`: Includes ACO parameters alongside SA/GA
+- `experiment_raw_data_log.csv`: Includes ACO results for comparative analysis
+
+#### CSV Data Uses
+
+- **Performance tracking**: Monitor convergence across multiple runs
+- **Parameter tuning**: Compare different α, β, ρ settings
+- **Statistical analysis**: Analyze ACO performance with pandas/R
+- **Reproducibility**: Document exact parameters and results
+- **Reporting**: Generate tables and charts for papers/reports
 
 ## Output
 

@@ -597,7 +597,8 @@ def save_experiment_summary(timestamp, all_stats):
                     'Avg Run Time (s)', 'Best Cost Overall', 'Num Runs', 
                     'Avg Evals Used', # <-- This is the important change
                     'SA_T_Init', 'SA_T_Min', 'SA_Cool_Rate', 'SA_Iter_Per_Temp',
-                    'GA_Pop_Size', 'GA_Generations', 'GA_Elitism', 'GA_Tourn_Size', 'GA_Mut_Perm', 'GA_Mut_Speed'
+                    'GA_Pop_Size', 'GA_Generations', 'GA_Elitism', 'GA_Tourn_Size', 'GA_Mut_Perm', 'GA_Mut_Speed',
+                    'ACO_Num_Ants', 'ACO_Num_Iterations', 'ACO_Alpha', 'ACO_Beta', 'ACO_Rho', 'ACO_Q'
                 ])
             
             if 'SA' in all_stats:
@@ -606,7 +607,8 @@ def save_experiment_summary(timestamp, all_stats):
                     timestamp, 'SA', stats['mean'], stats['std'], stats['time'], stats['best'],
                     NUM_EXPERIMENT_RUNS, stats['avg_evals'], # <-- MODIFIED
                     T_INITIAL, T_MIN, COOLING_RATE, MAX_ITER_PER_TEMP,
-                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A' 
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A',
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A'
                 ])
             if 'GA' in all_stats:
                 stats = all_stats['GA']
@@ -614,14 +616,24 @@ def save_experiment_summary(timestamp, all_stats):
                     timestamp, 'GA', stats['mean'], stats['std'], stats['time'], stats['best'],
                     NUM_EXPERIMENT_RUNS, stats['avg_evals'], # <-- MODIFIED
                     'N/A', 'N/A', 'N/A', 'N/A',
-                    POPULATION_SIZE, NUM_GENERATIONS, ELITISM_RATE, TOURNAMENT_SIZE, MUTATION_RATE_PERM, MUTATION_RATE_SPEED
+                    POPULATION_SIZE, NUM_GENERATIONS, ELITISM_RATE, TOURNAMENT_SIZE, MUTATION_RATE_PERM, MUTATION_RATE_SPEED,
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A'
+                ])
+            if 'ACO' in all_stats:
+                stats = all_stats['ACO']
+                writer.writerow([
+                    timestamp, 'ACO', stats['mean'], stats['std'], stats['time'], stats['best'],
+                    NUM_EXPERIMENT_RUNS, stats['avg_evals'],
+                    'N/A', 'N/A', 'N/A', 'N/A',
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A',
+                    NUM_ANTS, ACO_NUM_ITERATIONS, ACO_ALPHA, ACO_BETA, RHO, Q
                 ])
         print(f"  Successfully appended summary to: {SUMMARY_FILENAME}")
     except IOError as e:
         print(f"  ERROR: Could not save summary CSV. {e}")
 
 
-def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_evals=None, ga_evals=None):
+def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_evals=None, ga_evals=None, aco_results=None, aco_evals=None):
     """
     Saves the raw final cost AND evals from every single run to a SINGLE master CSV file.
     Appends the new runs; creates header if file doesn't exist.
@@ -632,20 +644,23 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_eva
             writer = csv.writer(f)
             if not file_exists:
                 # --- MODIFIED: Added evals columns ---
-                writer.writerow(['Experiment_Timestamp', 'Run', 'SA_Final_Cost', 'SA_Evals', 'GA_Final_Cost', 'GA_Evals'])
+                writer.writerow(['Experiment_Timestamp', 'Run', 'SA_Final_Cost', 'SA_Evals', 'GA_Final_Cost', 'GA_Evals', 'ACO_Final_Cost', 'ACO_Evals'])
             
             # Determine max number of runs
             num_runs = 0
             if sa_results: num_runs = len(sa_results)
             if ga_results: num_runs = max(num_runs, len(ga_results))
+            if aco_results: num_runs = max(num_runs, len(aco_results))
             
             for i in range(num_runs):
                 sa_val = sa_results[i] if sa_results and i < len(sa_results) else 'N/A'
                 sa_ev = sa_evals[i] if sa_evals and i < len(sa_evals) else 'N/A'
                 ga_val = ga_results[i] if ga_results and i < len(ga_results) else 'N/A'
                 ga_ev = ga_evals[i] if ga_evals and i < len(ga_evals) else 'N/A'
+                aco_val = aco_results[i] if aco_results and i < len(aco_results) else 'N/A'
+                aco_ev = aco_evals[i] if aco_evals and i < len(aco_evals) else 'N/A'
                 # --- MODIFIED: Write all data points ---
-                writer.writerow([timestamp, i+1, sa_val, sa_ev, ga_val, ga_ev])
+                writer.writerow([timestamp, i+1, sa_val, sa_ev, ga_val, ga_ev, aco_val, aco_ev])
                     
         print(f"  Successfully appended raw data to: {RAW_FILENAME}")
     except IOError as e:
@@ -719,7 +734,9 @@ def main():
          tau_p_dict, best_aco_obj_dict, evals) = run_aco(
             max_iterations=None, # Uses ACO_NUM_ITERATIONS
             visualize_realtime=True,
-            verbose=True
+            verbose=True,
+            log_to_csv=True,
+            csv_prefix="aco_single_run"
         )
         
         print("\nDisplaying ACO performance plots...")
@@ -912,7 +929,9 @@ def main():
                 _, _, aco_obj, aco_history, _, _, _, aco_evals = run_aco(
                     max_iterations=aco_iter_limit,
                     visualize_realtime=False,
-                    verbose=False
+                    verbose=False,
+                    log_to_csv=True,
+                    csv_prefix=f"aco_analysis_run_{i+1}"
                 )
                 print(f"    ...Run {i+1} Best: {aco_obj:.2f} (in {aco_evals} evals)")
                 aco_results.append(aco_obj)
