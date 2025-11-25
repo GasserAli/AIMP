@@ -97,6 +97,14 @@ except ImportError as e:
     print("  'GA', 'BOTH', 'GA_ANALYSIS', and 'EXPERIMENT' modes will not be available.")
     GA_IMPORTED = False
 
+try:
+    from aco import run_aco, plot_aco_performance_dashboard, create_initial_population as aco_create_initial_population
+    ACO_IMPORTED = True
+except ImportError as e:
+    print(f"WARNING: Could not import aco.py: {e}")
+    print("  'ACO' and 'ACO_ANALYSIS' modes will not be available.")
+    ACO_IMPORTED = False
+
 
 # =============================================================================
 # CONFIGURATION
@@ -104,11 +112,13 @@ except ImportError as e:
 # --- 1. CHOOSE ALGORITHM ---
 # 'SA':          Single run of SA (uses sa.MAX_TOTAL_ITERATIONS).
 # 'GA':          Single run of GA (uses ga.NUM_GENERATIONS).
+# 'ACO':         Single run of ACO (uses aco.NUM_ITERATIONS).
 # 'SA_ANALYSIS': N-run statistical analysis of SA (natural stop).
 # 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
+# 'ACO_ANALYSIS': N-run statistical analysis of ACO (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA (natural stops).
-OPTIMIZATION_ALGORITHM = 'SA_ANALYSIS' 
+OPTIMIZATION_ALGORITHM = 'ACO' 
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -142,6 +152,21 @@ else:
     TOURNAMENT_SIZE = 3
     MUTATION_RATE_PERM = 0.1
     MUTATION_RATE_SPEED = 0.1
+
+# ACO Parameters (used for 'ACO' and 'ACO_ANALYSIS')
+if ACO_IMPORTED:
+    from aco import (
+        NUM_ANTS, NUM_ITERATIONS as ACO_NUM_ITERATIONS, ALPHA as ACO_ALPHA,
+        BETA as ACO_BETA, RHO, Q
+    )
+else:
+    # Default values if ACO not imported
+    NUM_ANTS = 50
+    ACO_NUM_ITERATIONS = 100
+    ACO_ALPHA = 1.0
+    ACO_BETA = 2.0
+    RHO = 0.1
+    Q = 100.0
 # =============================================================================
 
 
@@ -684,6 +709,28 @@ def main():
         elif web_viz_enabled:
             visualize_web(perm_best, speeds_best)
 
+    # --- Run ACO (Single Run) ---
+    elif OPTIMIZATION_ALGORITHM == 'ACO':
+        if not ACO_IMPORTED:
+            print("ERROR: ACO algorithm selected but aco.py could not be imported.")
+            return
+            
+        (perm_best, speeds_best, obj_best, aco_history, geom, 
+         tau_p_dict, best_aco_obj_dict, evals) = run_aco(
+            max_iterations=None, # Uses ACO_NUM_ITERATIONS
+            visualize_realtime=True,
+            verbose=True
+        )
+        
+        print("\nDisplaying ACO performance plots...")
+        plot_aco_performance_dashboard(aco_history)
+        
+        print("  (Close all plot windows to continue to animation)")
+        if animation_enabled:
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+        elif web_viz_enabled:
+            visualize_web(perm_best, speeds_best)
+
     # --- Run BOTH (Single Run Comparison) ---
     elif OPTIMIZATION_ALGORITHM == 'BOTH':
         if not GA_IMPORTED:
@@ -726,9 +773,12 @@ def main():
             traceback.print_exc()
 
     # --- MODIFICATION: Split Experiment logic for "Natural Run" ---
-    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS'):
-        if not GA_IMPORTED:
+    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS'):
+        if not GA_IMPORTED and OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'GA_ANALYSIS'):
             print("ERROR: 'GA' dependent modes selected but ga.py could not be imported.")
+            return
+        if not ACO_IMPORTED and OPTIMIZATION_ALGORITHM == 'ACO_ANALYSIS':
+            print("ERROR: 'ACO_ANALYSIS' mode selected but aco.py could not be imported.")
             return
             
         print("\n--- PREPARING EXPERIMENT (NATURAL RUN) ---")
@@ -747,13 +797,17 @@ def main():
 
         sa_results = []
         ga_results = []
+        aco_results = []
         sa_evals_list = [] # <-- MODIFIED: Track evals per run
         ga_evals_list = [] # <-- MODIFIED: Track evals per run
+        aco_evals_list = []
         
         sa_best_obj_overall = math.inf
         sa_best_history_overall = {}
         ga_best_obj_overall = math.inf
         ga_best_history_overall = {}
+        aco_best_obj_overall = math.inf
+        aco_best_history_overall = {}
         all_stats = {}
         
         # --- FIX: Defined experiment_timestamp here ---
@@ -837,6 +891,45 @@ def main():
                 'avg_evals': np.mean(ga_evals_list) # <-- MODIFIED
             }
         
+        # 4b. Run ACO Experiment
+        if OPTIMIZATION_ALGORITHM in ('ACO_ANALYSIS',):
+            if not ACO_IMPORTED:
+                print("ERROR: ACO_ANALYSIS selected but aco.py could not be imported.")
+                return
+                
+            print("\nGenerating common initial (random seed) for ACO...")
+            # ACO doesn't need initial population but uses same random seed
+            
+            aco_iter_limit = None  # Natural stop
+            print(f"ACO using NATURAL STOP (Num_Iters={ACO_NUM_ITERATIONS} or Convergence)")
+
+            print("\n" + "="*70)
+            print(f"RUNNING ACO EXPERIMENT ({NUM_EXPERIMENT_RUNS} runs)...")
+            print("="*70)
+            start_time_aco = time.time()
+            for i in range(NUM_EXPERIMENT_RUNS):
+                print(f"  ACO Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
+                _, _, aco_obj, aco_history, _, _, _, aco_evals = run_aco(
+                    max_iterations=aco_iter_limit,
+                    visualize_realtime=False,
+                    verbose=False
+                )
+                print(f"    ...Run {i+1} Best: {aco_obj:.2f} (in {aco_evals} evals)")
+                aco_results.append(aco_obj)
+                aco_evals_list.append(aco_evals)
+                if aco_obj < aco_best_obj_overall:
+                    aco_best_obj_overall = aco_obj
+                    aco_best_history_overall = aco_history
+            end_time_aco = time.time()
+            
+            all_stats['ACO'] = {
+                'mean': np.mean(aco_results),
+                'std': np.std(aco_results),
+                'time': (end_time_aco - start_time_aco) / NUM_EXPERIMENT_RUNS,
+                'best': aco_best_obj_overall,
+                'avg_evals': np.mean(aco_evals_list)
+            }
+        
         # 5. Calculate and Print Statistics
         print("\n" + "="*70)
         print("EXPERIMENT STATISTICAL RESULTS")
@@ -855,6 +948,15 @@ def main():
         if 'GA' in all_stats:
             stats = all_stats['GA']
             print("--- Genetic Algorithm (GA) ---")
+            print(f"  Avg. Evals Used:     {stats['avg_evals']:.1f}")
+            print(f"  Mean (Avg. Best Cost): {stats['mean']:.2f}")
+            print(f"  Std. Deviation (Cost): {stats['std']:.2f}")
+            print(f"  Avg. Run Time (sec):   {stats['time']:.3f}")
+            print(f"  Best Cost (Overall):   {stats['best']:.2f}")
+        
+        if 'ACO' in all_stats:
+            stats = all_stats['ACO']
+            print("--- Ant Colony Optimization (ACO) ---")
             print(f"  Avg. Evals Used:     {stats['avg_evals']:.1f}")
             print(f"  Mean (Avg. Best Cost): {stats['mean']:.2f}")
             print(f"  Std. Deviation (Cost): {stats['std']:.2f}")
@@ -886,6 +988,8 @@ def main():
             save_experiment_raw_data(experiment_timestamp, sa_results=sa_results, sa_evals=sa_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'GA_ANALYSIS':
             save_experiment_raw_data(experiment_timestamp, ga_results=ga_results, ga_evals=ga_evals_list)
+        elif OPTIMIZATION_ALGORITHM == 'ACO_ANALYSIS':
+            save_experiment_raw_data(experiment_timestamp, aco_results=aco_results, aco_evals=aco_evals_list)
         # --- END FIX ---
         
         # 7. Show All Plots
@@ -924,6 +1028,12 @@ def main():
             plot_experiment_distribution([ga_results], ['GA'], ['red'])
             print("  Displaying performance dashboard for the BEST GA run...")
             plot_ga_performance_dashboard(ga_best_history_overall)
+        
+        elif OPTIMIZATION_ALGORITHM == 'ACO_ANALYSIS':
+            plot_experiment_results([aco_results], ['ACO'])
+            plot_experiment_distribution([aco_results], ['ACO'], ['orange'])
+            print("  Displaying performance dashboard for the BEST ACO run...")
+            plot_aco_performance_dashboard(aco_best_history_overall)
         
         print("  (All plots displayed)")
 

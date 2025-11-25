@@ -3,7 +3,7 @@ import random
 from vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 
 # --- Tunable Parameters ---
-velocity_range = (10,12)  # Minimum and maximum velocity for all vehicles
+velocity_range = (12,12)  # Minimum and maximum velocity for all vehicles
 tau = 1.0                # Headway time (in seconds)
 alpha = 1.0              # Weight for emergency vehicle delay
 beta = 1.0               # Weight for all vehicle delay
