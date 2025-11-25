@@ -108,7 +108,7 @@ except ImportError as e:
 # 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA (natural stops).
-OPTIMIZATION_ALGORITHM = 'SA' 
+OPTIMIZATION_ALGORITHM = 'BOTH' 
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'

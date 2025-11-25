@@ -4,10 +4,10 @@ from vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 
 # --- Tunable Parameters ---
 velocity_range = (10,15)  # Minimum and maximum velocity for all vehicles
-tau = 1.0                # Headway time (in seconds)
+tau = 1                # Headway time (in seconds)
 alpha = 1              # Weight for emergency vehicle delay
 beta = 1               # Weight for all vehicle delay
-gamma = 5   # <---- NEW: speed reward weight (tune 0.1 to 2.0)
+gamma = 3   # <---- NEW: speed reward weight (tune 0.1 to 2.0)
 safety_distance = 3    # Safety distance between vehicles (in meters)
 inter_conflict_distance = 3  # Distance between conflict points (in meters)
 

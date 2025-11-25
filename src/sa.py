@@ -65,7 +65,7 @@ def create_initial_solution(geom):
 
         # Leader starts with a high-ish random value
         last_speed = random.uniform(
-            v_min_global + 0.25*(v_max_global - v_min_global),
+            v_min_global + 0.5*(v_max_global - v_min_global),
             v_max_global
         )
         initial_speeds_dict[leader_in_queue.id] = last_speed
@@ -183,23 +183,26 @@ def evaluate_solution(permutation, speeds, geom, tau_p_dict, return_full_schedul
     Runs decoder + objective. Handles exceptions robustly.
     """
     try:
-        decoder_output = run_decoder(
-            permutation=permutation,
-            speeds=speeds,
-            geom=geom,
-            tau_p_dict=tau_p_dict,
-            return_full_schedule=return_full_schedule
-        )
-
-        # unpack if needed
+        # Call decoder. If full schedule requested, decoder returns (decoder_results, scheduled_times, t_ear)
         if return_full_schedule:
-            decoder_results, scheduled_times, t_ear = decoder_output
+            decoder_results, scheduled_times, t_ear = run_decoder(
+                permutation=permutation,
+                speeds=speeds,
+                geom=geom,
+                tau_p_dict=tau_p_dict,
+                return_full_schedule=True
+            )
         else:
-            decoder_results = decoder_output
-            scheduled_times, t_ear = {}, {}
+            decoder_results = run_decoder(
+                permutation=permutation,
+                speeds=speeds,
+                geom=geom,
+                tau_p_dict=tau_p_dict,
+                return_full_schedule=False
+            )
 
+        # Compute objective
         obj_dict = objective.calculate_objective(decoder_results, speeds=speeds)
-
 
         if return_full_schedule:
             return obj_dict, scheduled_times, t_ear
@@ -352,4 +355,51 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
         except Exception:
             # Fallback: if something unexpected, still return gracefully
             print("Could not print detailed speeds (unexpected error).")
+        # --- Compute and print collision statistics from the final best schedule ---
+        try:
+            # Request full schedule from decoder for the best solution
+            obj_full, scheduled_times, t_ear = evaluate_solution(
+                perm_best, speeds_best, geom, tau_p_dict, return_full_schedule=True
+            )
+
+            # Count penalized/stuck vehicles
+            penalty_count = 0
+            penalty_ids = []
+            for vid, st in scheduled_times.items():
+                if st.get('__PENALTY__') == math.inf:
+                    penalty_count += 1
+                    penalty_ids.append(vid)
+
+            # Count overlapping occupancies per conflict point (pairwise overlaps)
+            overlap_count = 0
+            overlap_examples = []
+            for p in tau_p_dict.keys():
+                intervals = []
+                for vid, st in scheduled_times.items():
+                    if p in st and st[p] != math.inf:
+                        arrival = st[p]
+                        departure = arrival + tau_p_dict.get(p, config.tau)
+                        intervals.append((arrival, departure, vid))
+                intervals.sort(key=lambda x: x[0])
+                for i in range(len(intervals)):
+                    ai, di, vidi = intervals[i]
+                    for j in range(i+1, len(intervals)):
+                        aj, dj, vidj = intervals[j]
+                        if aj < di:  # overlap detected
+                            overlap_count += 1
+                            if len(overlap_examples) < 5:
+                                overlap_examples.append((p, vidi, vidj, ai, di, aj, dj))
+                        else:
+                            break
+
+            print("\nCollision summary for best solution:")
+            print(f"  Unique conflict points in scenario: {len(all_points)}")
+            print(f"  Vehicles penalized/stuck: {penalty_count} {penalty_ids}")
+            print(f"  Overlapping occupancy pairs detected: {overlap_count}")
+            if overlap_examples:
+                print("  Example overlaps (point, vid1, vid2, t1_start,t1_end,t2_start,t2_end):")
+                for ex in overlap_examples:
+                    print("   ", ex)
+        except Exception as e:
+            print(f"Could not compute collision statistics: {e}")
     return perm_best, speeds_best, obj_best, history, geom, tau_p_dict, iter_count
