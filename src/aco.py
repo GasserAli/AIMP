@@ -147,25 +147,33 @@ class ACOGraph:
         self.eta = self._init_heuristic()
     
     def _init_heuristic(self) -> np.ndarray:
-        """
-        Initialize heuristic information.
-        
-        Emergency vehicles get higher heuristic values for earlier positions.
-        This encourages ants to place emergency vehicles early in permutation.
-        """
-        eta = np.ones((self.n, self.n))
-        
-        for pos in range(self.n):
+    # """
+    # Initialize heuristic information with priority, queue position, and conflict time.
+    # """
+        n = len(self.vehicles)
+        eta = np.ones((n, n), dtype=float)
+
+        # Simple queue index fallback
+        queue_index = {v.id: idx for idx, v in enumerate(self.vehicles)}
+
+        for pos in range(n):
             for v_idx, vehicle in enumerate(self.vehicles):
-                if vehicle.priority_status:  # Emergency vehicle
-                    # Higher value for earlier positions
-                    eta[pos][v_idx] = 2.0 * (1.0 - pos / self.n)
-                else:
-                    # Normal vehicles have uniform moderate heuristic
-                    eta[pos][v_idx] = 1.0
+                # Position scaling - earlier positions get more weight
+                pos_scale = max(0.1, (1.0 - pos / max(1, n)))
+                
+                # Priority factor
+                priority_factor = 3.0 if vehicle.priority_status else 1.0
+                
+                # Queue position factor (vehicles at front get higher priority)
+                q_idx = queue_index.get(vehicle.id, 0)
+                queue_factor = 1.0 / (1.0 + q_idx)
+                
+                # Combine factors
+                value = priority_factor * queue_factor * pos_scale
+                
+                eta[pos][v_idx] = max(0.1, value)
         
         return eta
-    
     def get_pheromone_stats(self) -> Tuple[float, float, float]:
         """Returns (max, avg, min) pheromone levels."""
         return float(np.max(self.tau)), float(np.mean(self.tau)), float(np.min(self.tau))

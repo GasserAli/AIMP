@@ -84,17 +84,11 @@ except Exception as e:
 
 # --- Import MMAS (new) ---
 try:
-    from mmas import (
-        run_mmas,
-        MAX_ITER,
-        plot_mmas_results,
-        plot_mmas_performance_dashboard
-    )
+    from mmas import run_mmas , MAX_ITER
     MMAS_IMPORTED = True
 except Exception as e:
     print(f"WARNING: Could not import mmas.py: {e}")
     MMAS_IMPORTED = False
-
 
 # =============================================================================
 # CONFIGURATION
@@ -572,15 +566,9 @@ def main():
             return
         perm_best, speeds_best, obj_best, mmas_history, geom, tau_p_dict, evals = run_mmas(max_iter=MAX_ITER)
         print("\nDisplaying MMAS performance plots...")
+        # MMAS history format aligns with SA; reuse SA plot function
         try:
-            # Full MMAS Dashboard (GA-style)
-            plot_mmas_performance_dashboard(mmas_history)
-
-            # SA-style progression plot
-            plot_mmas_results(mmas_history)
-        except Exception as e:
-            print("MMAS plotting failed:", e)
-
+            plot_sa_results(mmas_history)
         except Exception:
             # Fallback: simple print if plotting fails
             print("MMAS history plotting failed or not in expected format.")
@@ -632,12 +620,11 @@ def main():
             print(f"Could not plot SA vs GA: {e}")
 
         # Also show MMAS progression plot if available
-        print("Displaying MMAS progression plot...")
         try:
-            plot_mmas_performance_dashboard(mmas_history)
-        except:
+            print("Displaying MMAS progression plot...")
+            plot_sa_results(mmas_history)
+        except Exception:
             pass
-
 
     # --- Experiment / Analysis Modes (natural runs) ---
     elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'MMAS_ANALYSIS'):
@@ -819,13 +806,10 @@ def main():
                 plot_ga_performance_dashboard(ga_best_history_overall)
             if 'MMAS' in all_stats:
                 print("  Displaying performance dashboard for the BEST MMAS run...")
-
                 try:
-                    plot_mmas_performance_dashboard(mmas_best_history_overall)
-                    plot_mmas_results(mmas_best_history_overall)
-                except Exception as e:
-                    print("MMAS plotting failed:", e)
-
+                    plot_sa_results(mmas_best_history_overall)
+                except Exception:
+                    pass
 
     else:
         print(f"Error: Unknown OPTIMIZATION_ALGORITHM: '{OPTIMIZATION_ALGORITHM}'")
