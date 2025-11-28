@@ -17,7 +17,7 @@ import numpy as np
 import random
 import math
 import matplotlib.pyplot as plt
-
+from mmas import generate_speeds_for_permutation , run_mmas
 import config
 from sa import evaluate_solution, validate_speeds
 
@@ -69,15 +69,14 @@ class PSOVisualizer:
             plt.close(self.fig)
         plt.ioff()
 
-
-# =============================================================
+# ===========================================================
 #  SPEED FITNESS WRAPPER
 # =============================================================
-def _fitness(permutation, speeds, geom, tau_p_dict):
-    """Evaluate speeds with decoder; returns objective f."""
-    s_val = validate_speeds(permutation, speeds, geom)
-    obj = evaluate_solution(permutation, s_val, geom, tau_p_dict)
+def _fitness(permutation, raw_speeds, geom, tau_p_dict):
+    actual_speeds = validate_speeds(permutation, raw_speeds, geom)
+    obj = evaluate_solution(permutation, actual_speeds, geom, tau_p_dict)
     return obj["f"]
+
 
 
 # =============================================================
@@ -110,11 +109,19 @@ def pso_optimize_speeds(permutation,
     swarm = []
     velocity = []
 
+    # baseline deterministic speeds
+    baseline, _ = generate_speeds_for_permutation(permutation, geom), None
+    baseline = np.array(baseline)
+
+    # initialize swarm around baseline
     for _ in range(swarm_size):
-        p = np.array([random.uniform(vmin, vmax) for _ in range(dim)])
-        v = np.zeros(dim)
+        p = baseline + np.random.uniform(-2, 2, size=dim)
+        p = np.clip(p, vmin, vmax)
         swarm.append(p)
+
+        v = np.zeros(dim)
         velocity.append(v)
+
 
     # personal bests
     pbest = [p.copy() for p in swarm]
@@ -201,72 +208,43 @@ def pso_optimize_speeds(permutation,
 
     return gbest.tolist(), gbest_f, history
 
-
 # =============================================================
 # MAIN: Run MMAS → then PSO on resulting permutation
 # =============================================================
 if __name__ == "__main__":
-    print("\n===================================================")
-    print("      PSO SPEED OPTIMIZATION — STANDALONE TEST")
-    print("  (Loads permutation from MMAS, then runs PSO)")
-    print("===================================================\n")
-
-    try:
-        from mmas import run_mmas, MAX_ITER, NUM_ANTS
-    except Exception as e:
-        print("ERROR: Could not import MMAS:", e)
-        exit(1)
-
-    import config
-    from geometry import Geometry
-
-    print("Running MMAS first to get best permutation...\n")
-
-    # -------------------------------------------------------
-    # Run MMAS to obtain best permutation
-    # -------------------------------------------------------
+    # run MMAS to get best permutation (ensure run_mmas returns deterministic speeds)
     perm_best, speeds_best_mmas, best_cost_mmas, mmas_history, geom, tau_p_dict, evals = run_mmas(
-        max_iter=MAX_ITER,
-        num_ants=NUM_ANTS,
-        verbose=True,
-        log_to_csv=False
+        visualize_realtime=True,
+        verbose=True
     )
 
-    print("\n--- MMAS Completed ---")
-    print("Best Permutation:", [v.id for v in perm_best])
-    print("MMAS best cost (with initial speeds):", best_cost_mmas)
+    print("\nMMAS finished.")
+    print("Permutation:", [v.id for v in perm_best])
+    print("MMAS best cost:", best_cost_mmas)
 
-    # -------------------------------------------------------
-    # Prepare initial PSO speeds (random within global limits)
-    # -------------------------------------------------------
-    vmin, vmax = config.velocity_range
-    init_speeds = [random.uniform(vmin, vmax) for _ in perm_best]
+    # prepare PSO init speeds: prefer deterministic MMAS speeds or baseline generator
+    if speeds_best_mmas and len(speeds_best_mmas) == len(perm_best):
+        init_speeds = speeds_best_mmas
+    else:
+        init_speeds = generate_speeds_for_permutation(perm_best, geom)
 
-    print("\nRunning PSO speed optimization...\n")
-
-    # -------------------------------------------------------
-    # Run PSO on the MMAS permutation
-    # -------------------------------------------------------
+    # run PSO to fine-tune speeds for the fixed permutation
     best_speeds_pso, best_cost_pso, pso_history = pso_optimize_speeds(
         permutation=perm_best,
         init_speeds=init_speeds,
         geom=geom,
         tau_p_dict=tau_p_dict,
-        swarm_size=30,
+        swarm_size=15,
         iters=100,
         visualize=True,
         verbose=True
     )
 
-    print("\n=======================")
-    print("   FINAL RESULTS")
-    print("=======================\n")
-
+    # final evaluation using decoder
+    final_obj_dict = evaluate_solution(perm_best, best_speeds_pso, geom, tau_p_dict)
+    print("\nFINAL HYBRID RESULTS:")
     print("Permutation:", [v.id for v in perm_best])
-    print("Speeds from PSO:", [round(s, 2) for s in best_speeds_pso])
-    print("MMAS Cost (before PSO):", round(best_cost_mmas, 2))
-    print("PSO Cost  (after  PSO):", round(best_cost_pso, 2))
-    print("Improvement:", round(best_cost_mmas - best_cost_pso, 4))
-
-    print("\nPSO optimization completed.")
-
+    print("Final speeds (PSO):", [round(s, 3) for s in best_speeds_pso])
+    print("MMAS cost (before PSO):", best_cost_mmas)
+    print("PSO cost (after):", best_cost_pso)
+    print("Final decoded objective (f):", final_obj_dict.get("f"))

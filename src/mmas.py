@@ -111,20 +111,35 @@ class Ant:
         self.fitness = math.inf
 
 
+# ---------- MMASGraph (transition-based) ----------
 class MMASGraph:
     def __init__(self, vehicles: List[Vehicle], tau_init: float = TAU_INITIAL):
         self.vehicles = vehicles
         self.n = len(vehicles)
-        self.vehicle_ids = [v.id for v in vehicles]
-        self.tau = np.ones((self.n, self.n)) * tau_init
+        # map vehicle ID -> index
+        self.id_to_idx = {v.id: i for i, v in enumerate(vehicles)}
+        self.idx_to_id = {i: v.id for i, v in enumerate(vehicles)}
+        # transition pheromone matrix: (n+1) x n
+        # rows 0..n-1: vehicle idx -> next vehicle idx
+        # row n: start -> first vehicle
+        self.tau = np.ones((self.n + 1, self.n)) * tau_init
 
     def evaporate(self, rho):
         self.tau *= (1 - rho)
 
     def deposit_for_permutation(self, perm: List[Vehicle], delta: float):
-        for pos, v in enumerate(perm):
-            idx = self.vehicle_ids.index(v.id)
-            self.tau[pos, idx] += delta
+        """Deposit pheromone along transitions defined by perm."""
+        if not perm:
+            return
+        n = self.n
+        # start -> first
+        first_idx = self.id_to_idx[perm[0].id]
+        self.tau[n, first_idx] += delta
+        # transitions
+        for a, b in zip(perm[:-1], perm[1:]):
+            i = self.id_to_idx[a.id]
+            j = self.id_to_idx[b.id]
+            self.tau[i, j] += delta
 
     def clamp(self, tmin, tmax):
         np.clip(self.tau, tmin, tmax, out=self.tau)
@@ -132,129 +147,140 @@ class MMASGraph:
     def stats(self):
         return float(np.max(self.tau)), float(np.mean(self.tau)), float(np.min(self.tau))
 
-# =============================================================
-# Heuristic: PRIORITY + QUEUE INDEX
-# =============================================================
+
+# ---------- Transition-based heuristic ----------
 def build_priority_heuristic(vehicles: List[Vehicle], geom: Geometry) -> np.ndarray:
     """
-    Builds the (n × n) heuristic matrix eta[pos][veh_idx].
-
-    Heuristic components:
-      - Emergency vehicles get higher heuristic values.
-      - Vehicles close to stopline (low queue index) get higher values.
-      - Earlier permutation positions (pos close to 0) amplify the heuristic.
-
-    NOTE:
-      This function does NOT include time-to-first-conflict unless requested.
+    eta[i][j] = heuristic for choosing vehicle j after vehicle i.
+    Row n is the artificial START node.
     """
-
     n = len(vehicles)
-    eta = np.ones((n, n), dtype=float)
+    id_to_idx = {v.id: idx for idx, v in enumerate(vehicles)}
+    eta = np.ones((n + 1, n), dtype=float)
 
-
-
-    # -----------------------------------------------------------
-    # Precompute queue index: position of vehicle in its approach queue
-    # Closer to stopline → lower index → higher weight
-    # -----------------------------------------------------------
+    # precompute queue index (closer to stopline -> better)
     queue_index = {}
     for approach, queue in geom.entry_queues.items():
         for idx, v in enumerate(queue):
             queue_index[v.id] = idx
 
-    # -----------------------------------------------------------
-    # Build heuristic matrix
-    # eta[position][vehicle]
-    # -----------------------------------------------------------
-    for pos in range(n):
-        # earlier positions get stronger emphasis
-        pos_scale = max(0.01, 1.0 - pos / max(1, n))
-
-        for v_idx, v in enumerate(vehicles):
-
-            # Priority factor: emergency > normal
-            priority_factor = 3.0 if getattr(v, "priority_status", False) else 1.0
-
-            # Queue index factor
-            q_idx = queue_index.get(v.id, 99)    # penalize if not found
-            queue_factor = 1.0 / (1.0 + float(q_idx))
-
-            # Final heuristic value
-            value = priority_factor * queue_factor * pos_scale
-
-            eta[pos, v_idx] = max(1e-6, value)  # avoid zeros
+    for i in range(n + 1):  # includes start row
+        for v_j in vehicles:
+            j = id_to_idx[v_j.id]
+            priority = 3.0 if getattr(v_j, "priority_status", False) else 1.0
+            q_idx = queue_index.get(v_j.id, 99)
+            queue_factor = 1.0 / (1.0 + q_idx)
+            eta[i, j] = max(1e-6, priority * queue_factor)
 
     return eta
 
 
-# =============================================================
-# Speed Initialization (leader/follower)
-# =============================================================
+# ---------- Deterministic speed baseline for MMAS ----------
 def generate_speeds_for_permutation(permutation: List[Vehicle], geom: Geometry):
+    """
+    Deterministic baseline speeds used for MMAS evaluations.
+    Leaders get near-max speed; followers decline smoothly.
+    """
+    import numpy as _np
     vmin, vmax = config.velocity_range
     speeds = {}
 
+    leader_target = vmax * 0.90
+    decay = 0.05  # each follower ~5% slower than previous
+
+    # For each approach queue assign deterministic speeds
+    perm_ids = [v.id for v in permutation]
     for approach, queue in geom.entry_queues.items():
+        if not queue:
+            continue
+
         leader = None
         for v in queue:
-            if v.id in [x.id for x in permutation]:
+            if v.id in perm_ids:
                 leader = v
                 break
-
         if leader is None:
             continue
 
-        leader_speed = random.uniform(vmin, vmax)
-        speeds[leader.id] = leader_speed
-        last_s = leader_speed
-
+        speeds[leader.id] = float(_np.clip(leader_target, vmin, vmax))
+        idx = 1
         for v in queue:
-            if v.id == leader.id or v.id not in [x.id for x in permutation]:
+            if v.id == leader.id or v.id not in perm_ids:
                 continue
-            s_new = random.uniform(vmin, last_s)
-            speeds[v.id] = s_new
-            last_s = s_new
+            follower_speed = leader_target * max(0.4, (1 - decay * idx))
+            follower_speed = float(_np.clip(follower_speed, vmin, vmax))
+            speeds[v.id] = follower_speed
+            idx += 1
 
+    # Fill missing vehicles
     final_speeds = []
     for v in permutation:
         if v.id not in speeds:
-            speeds[v.id] = random.uniform(vmin, vmax)
+            speeds[v.id] = float((vmin + vmax) / 2.0)
         final_speeds.append(speeds[v.id])
 
     return final_speeds
 
-# =============================================================
-# Construct solution for one ant
-# =============================================================
+
+# ---------- Construct anti solution using transition pheromones ----------
 def construct_ant_solution(ant: Ant, graph: MMASGraph, eta, alpha, beta, geom, tau_p_dict):
     ant.reset()
     n = graph.n
-    available = graph.vehicle_ids.copy()
-    vmap = {v.id: v for v in graph.vehicles}
+    vehicles = graph.vehicles
+    id_to_idx = graph.id_to_idx
 
-    # Build permutation
-    for pos in range(n):
-        probs = []
-        for vid in available:
-            idx = graph.vehicle_ids.index(vid)
-            phero = graph.tau[pos, idx] ** alpha
-            heur = eta[pos, idx] ** beta
-            probs.append(phero * heur)
+    available = set(v.id for v in vehicles)
 
-        probs = np.array(probs)
-        probs = probs / probs.sum() if probs.sum() > 0 else np.ones(len(probs)) / len(probs)
+    # Choose first vehicle (start row = n)
+    probs = []
+    cand_list = list(available)
+    for vid in cand_list:
+        j = id_to_idx[vid]
+        pher = graph.tau[n, j] ** alpha
+        heur = eta[n, j] ** beta
+        probs.append(pher * heur)
+    probs = np.array(probs, dtype=float)
+    if probs.sum() <= 0:
+        probs = np.ones_like(probs) / len(probs)
+    else:
+        probs = probs / probs.sum()
 
-        chosen_idx = np.random.choice(len(available), p=probs)
-        chosen_vid = available.pop(chosen_idx)
-        ant.permutation.append(vmap[chosen_vid])
+    chosen_vid = np.random.choice(cand_list, p=probs)
+    ant.permutation.append(next(v for v in vehicles if v.id == chosen_vid))
+    available.remove(chosen_vid)
 
-    # Speeds
+    # Grow permutation using transitions
+    while available:
+        prev_vid = ant.permutation[-1].id
+        i = id_to_idx[prev_vid]
+        cand_list = list(available)
+        local_probs = []
+        for vid in cand_list:
+            j = id_to_idx[vid]
+            pher = graph.tau[i, j] ** alpha
+            heur = eta[i, j] ** beta
+            local_probs.append(pher * heur)
+        local_probs = np.array(local_probs, dtype=float)
+        if local_probs.sum() <= 0:
+            local_probs = np.ones_like(local_probs) / len(local_probs)
+        else:
+            local_probs = local_probs / local_probs.sum()
+
+        next_vid = np.random.choice(cand_list, p=local_probs)
+        ant.permutation.append(next(v for v in vehicles if v.id == next_vid))
+        available.remove(next_vid)
+
+    # Speeds: deterministic baseline (no randomness)
     ant.speeds = generate_speeds_for_permutation(ant.permutation, geom)
+
+    # Validate speeds using SA/GA validator (if you want strict enforcement here)
+    # But avoid injecting randomness: use validate_speeds only if it is deterministic.
     ant.speeds = validate_speeds(ant.permutation, ant.speeds, geom)
 
     # Evaluate
     obj = evaluate_solution(ant.permutation, ant.speeds, geom, tau_p_dict)
     ant.fitness = obj["f"]
+
 
 # =============================================================
 # Main MMAS Runner

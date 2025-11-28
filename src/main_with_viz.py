@@ -707,7 +707,7 @@ def main():
         )
 
         print("\nFinal PSO Improved Cost = ", obj_pso)
-
+        print(f"speeds: {[round(s,2) for s in best_speeds_pso]}")
         print("\nPlotting TRIPLE FINAL COST COMPARISON...")
         plot_triple_costs(
             cost_sa=sa_obj,
