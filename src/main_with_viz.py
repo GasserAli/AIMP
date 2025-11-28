@@ -564,18 +564,75 @@ def main():
         if not MMAS_IMPORTED:
             print("ERROR: MMAS selected but mmas.py could not be imported.")
             return
-        perm_best, speeds_best, obj_best, mmas_history, geom, tau_p_dict, evals = run_mmas(max_iter=MAX_ITER)
-        print("\nDisplaying MMAS performance plots...")
-        # MMAS history format aligns with SA; reuse SA plot function
+
+        print("\n======================")
+        print("Running MMAS first...")
+        print("======================\n")
+
+        # ---------------------------------------------
+        # STEP 1 — Run MMAS -->
+        #   returns best permutation + initial speeds
+        # ---------------------------------------------
+        perm_best, speeds_best, obj_mmas, mmas_history, geom, tau_p_dict, evals_mmas = run_mmas(
+            max_iter=MAX_ITER,
+            visualize_realtime=True
+        )
+
+        print("\nMMAS DONE.")
+        print(f"Best MMAS permutation: {[v.id for v in perm_best]}")
+        print(f"MMAS initial cost: {obj_mmas:.4f}")
+
+        # ---------------------------------------------
+        # STEP 2 — Run PSO with fixed permutation
+        # ---------------------------------------------
+        print("\n======================")
+        print("Running PSO on speeds...")
+        print("======================\n")
+
+        # Import lightweight PSO optimizer
+        from pso import pso_optimize_speeds
+
+        # Seed PSO with initial MMAS speeds
+        vmin, vmax = config.velocity_range
+        init_speeds = speeds_best[:]  # direct seed
+
+        best_speeds_pso, obj_pso, pso_history = pso_optimize_speeds(
+            permutation=perm_best,
+            init_speeds=init_speeds,
+            geom=geom,
+            tau_p_dict=tau_p_dict,
+            swarm_size=25,
+            iters=80,
+            visualize=True,
+            verbose=True
+        )
+
+        print("\nPSO DONE.")
+        print(f"Optimized PSO speeds: {[round(s,2) for s in best_speeds_pso]}")
+        print(f"PSO final cost: {obj_pso:.4f}")
+
+        # ---------------------------------------------
+        # STEP 3 — Report + Visualize
+        # ---------------------------------------------
+        print("\n======================")
+        print("RESULT SUMMARY (MMAS → PSO)")
+        print("======================\n")
+
+        print(f"MMAS best cost:   {obj_mmas:.4f}")
+        print(f"PSO improved cost:{obj_pso:.4f}")
+        print(f"Total improvement:{obj_mmas - obj_pso:.4f}")
+
+        # MMAS convergence plot
         try:
             plot_sa_results(mmas_history)
-        except Exception:
-            # Fallback: simple print if plotting fails
-            print("MMAS history plotting failed or not in expected format.")
+        except:
+            pass
+
+        # Final visualization
         if animation_enabled:
-            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+            visualize_matplotlib(perm_best, best_speeds_pso, geom, tau_p_dict)
         elif web_viz_enabled:
-            visualize_web(perm_best, speeds_best)
+            visualize_web(perm_best, best_speeds_pso)
 
     # --- Run BOTH (Single Run Comparison) ---
     elif OPTIMIZATION_ALGORITHM == 'BOTH':
