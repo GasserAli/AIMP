@@ -98,17 +98,22 @@ def create_initial_solution(geom):
 # ================================================================
 def validate_speeds(permutation, speeds, geom):
     """
-    Enforce no-catch-up constraint per lane queue:
-    follower_speed ≤ leader_speed.
+    Relaxed leader–follower constraint:
+    - Leader must be ≥ 25% above v_min.
+    - Follower ≤ leader speed.
     """
-    speed_dict = {p.id: s for p, s in zip(permutation, speeds)}
     v_min_global, v_max_global = config.velocity_range
+    
+    # leader minimum = v_min + 25% of range
+    leader_soft_min = v_min_global + 0.25 * (v_max_global - v_min_global)
+
+    speed_dict = {p.id: s for p, s in zip(permutation, speeds)}
 
     for queue in geom.entry_queues.values():
         if not queue:
             continue
 
-        # Find first vehicle in queue
+        # Identify leader
         leader = None
         for v in queue:
             if v.id in speed_dict:
@@ -117,19 +122,27 @@ def validate_speeds(permutation, speeds, geom):
         if not leader:
             continue
 
-        last_speed = speed_dict[leader.id]
+        # --- Apply relaxed C0 to leader ---
+        leader_speed = speed_dict[leader.id]
+        leader_speed = max(leader_speed, leader_soft_min)
+        leader_speed = min(leader_speed, v_max_global)
+        speed_dict[leader.id] = leader_speed
 
-        # Apply constraint down the queue
-        for v_follower in queue:
-            if v_follower.id not in speed_dict or v_follower.id == leader.id:
-                continue
+        # --- Propagate constraint to followers ---
+        last_speed = leader_speed
 
-            if speed_dict[v_follower.id] > last_speed:
-                speed_dict[v_follower.id] = last_speed
+        followers = [v for v in queue if v.id != leader.id and v.id in speed_dict]
 
-            last_speed = speed_dict[v_follower.id]
+        for v_follower in followers:
+            s = speed_dict[v_follower.id]
+            s = min(s, last_speed)         # follower cannot exceed predecessor
+            s = max(s, v_min_global)       # but still above global minimum
+            speed_dict[v_follower.id] = s
+            last_speed = s
 
+    # Return speeds in order of permutation
     return [speed_dict[v.id] for v in permutation]
+
 
 
 # ================================================================
