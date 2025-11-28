@@ -94,8 +94,8 @@ except Exception as e:
 # CONFIGURATION
 # =============================================================================
 # Choose algorithm:
-# 'SA', 'GA', 'MMAS', 'SA_ANALYSIS', 'GA_ANALYSIS', 'MMAS_ANALYSIS', 'BOTH', 'EXPERIMENT'
-OPTIMIZATION_ALGORITHM = 'MMAS'
+# 'SA', 'GA', 'MMAS', 'SA_ANALYSIS', 'GA_ANALYSIS', 'MMAS_ANALYSIS', 'BOTH', 'EXPERIMENT' , ""
+OPTIMIZATION_ALGORITHM = 'BOTH'
 
 # Visualization options: 'matplotlib', 'web', 'none'
 VISUALIZATION_METHOD = 'matplotlib'
@@ -510,6 +510,31 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, mmas_r
     except IOError as e:
         print(f"  ERROR: Could not save raw data CSV. {e}")
 
+def plot_triple_costs(cost_sa, cost_ga, cost_mmas_pso):
+    """
+    Plots a clean comparison of the final cost of:
+        - SA
+        - GA
+        - MMAS → PSO
+    """
+    labels = ['SA', 'GA', 'MMAS→PSO']
+    values = [cost_sa, cost_ga, cost_mmas_pso]
+
+    plt.figure(figsize=(8, 6))
+    bars = plt.bar(labels, values, color=['blue', 'red', 'green'], alpha=0.7)
+
+    # Annotate values on bars
+    for bar, val in zip(bars, values):
+        plt.text(bar.get_x() + bar.get_width()/2,
+                 val + 0.5,
+                 f"{val:.2f}",
+                 ha='center', fontsize=12, fontweight='bold')
+
+    plt.title("Final Objective Cost Comparison")
+    plt.ylabel("Cost (f) — lower is better")
+    plt.grid(axis='y', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
 
 
 
@@ -625,6 +650,12 @@ def main():
         print(f"PSO improved cost:{obj_pso:.4f}")
         print(f"Total improvement:{obj_mmas - obj_pso:.4f}")
 
+        # Triple comparison (only MMAS→PSO shown here)
+        # For SA and GA, you will call this same function inside BOTH or EXPERIMENT mode
+        print("\nPlotting triple comparison (MMAS → PSO only)...")
+        plot_triple_costs(cost_sa=obj_mmas, cost_ga=obj_mmas, cost_mmas_pso=obj_pso)
+
+
         # MMAS convergence plot
         try:
             plot_sa_results(mmas_history)
@@ -638,6 +669,7 @@ def main():
             visualize_web(perm_best, best_speeds_pso)
 
     # --- Run BOTH (Single Run Comparison) ---
+    # --- Run BOTH (Single Run Comparison) ---
     elif OPTIMIZATION_ALGORITHM == 'BOTH':
         if not GA_IMPORTED or not MMAS_IMPORTED:
             print("ERROR: 'BOTH' mode selected but GA or MMAS module could not be imported.")
@@ -645,46 +677,62 @@ def main():
 
         print("\n--- RUNNING SIMULATED ANNEALING ---")
         (sa_perm, sa_speeds, sa_obj, sa_history,
-         sa_geom, sa_tau, sa_evals) = run_sa(
+        sa_geom, sa_tau, sa_evals) = run_sa(
             max_iter=COMPARISON_EVALUATION_BUDGET
         )
 
         print("\n--- RUNNING GENETIC ALGORITHM ---")
         (ga_perm, ga_speeds, ga_obj, ga_history,
-         ga_geom, ga_tau, best_ga_obj_dict, ga_evals) = run_ga(
+        ga_geom, ga_tau, best_ga_obj_dict, ga_evals) = run_ga(
             max_evaluations=COMPARISON_EVALUATION_BUDGET,
             visualize_realtime=False
         )
 
-        print("\n--- RUNNING MMAS ---")
+        print("\n--- RUNNING MMAS (Permutation Only) ---")
         (mmas_perm, mmas_speeds, mmas_obj, mmas_history,
-         mmas_geom, mmas_tau, mmas_evals) = run_mmas(max_iter=MAX_ITER)
+        mmas_geom, mmas_tau, mmas_evals) = run_mmas(max_iter=MAX_ITER)
+
+        print("\n--- APPLYING PSO ON TOP OF MMAS PERMUTATION ---")
+        from pso import pso_optimize_speeds
+
+        best_speeds_pso, obj_pso, pso_hist = pso_optimize_speeds(
+            permutation=mmas_perm,
+            init_speeds=mmas_speeds,
+            geom=mmas_geom,
+            tau_p_dict=mmas_tau,
+            swarm_size=25,
+            iters=120,
+            visualize=False,
+            verbose=True
+        )
+
+        print("\nFinal PSO Improved Cost = ", obj_pso)
+
+        print("\nPlotting TRIPLE FINAL COST COMPARISON...")
+        plot_triple_costs(
+            cost_sa=sa_obj,
+            cost_ga=ga_obj,
+            cost_mmas_pso=obj_pso  # <- CORRECTED
+        )
 
         print("\n" + "="*70)
         print("COMPARISON RESULTS")
         print("="*70)
         print(f"Budget: {COMPARISON_EVALUATION_BUDGET} evaluations")
-        print(f"  SA Final Best: {sa_obj:.2f} (in {sa_evals} evals)")
-        print(f"  GA Final Best: {ga_obj:.2f} (in {ga_evals} evals)")
-        print(f"  MMAS Final Best: {mmas_obj:.2f} (in {mmas_evals} evals)")
+        print(f"  SA Final Best:     {sa_obj:.2f} (in {sa_evals} evals)")
+        print(f"  GA Final Best:     {ga_obj:.2f} (in {ga_evals} evals)")
+        print(f"  MMAS→PSO Final Best: {obj_pso:.2f} (MMAS evals {mmas_evals})")
 
-        # simple winner print
-        best_overall = min((('SA', sa_obj), ('GA', ga_obj), ('MMAS', mmas_obj)), key=lambda x: x[1])
-        print(f"\n  Best algorithm: {best_overall[0]} with cost {best_overall[1]:.2f}")
+        best_overall = min((('SA', sa_obj), ('GA', ga_obj), ('MMAS→PSO', obj_pso)), key=lambda x: x[1])
+        print(f"\n  Best algorithm overall: {best_overall[0]} with cost {best_overall[1]:.2f}")
         print("="*70)
 
-        # Plot comparison: SA vs GA (as before)
+        # Optional plots
         try:
             plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals)
         except Exception as e:
-            print(f"Could not plot SA vs GA: {e}")
+            print("Plot error:", e)
 
-        # Also show MMAS progression plot if available
-        try:
-            print("Displaying MMAS progression plot...")
-            plot_sa_results(mmas_history)
-        except Exception:
-            pass
 
     # --- Experiment / Analysis Modes (natural runs) ---
     elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'MMAS_ANALYSIS'):

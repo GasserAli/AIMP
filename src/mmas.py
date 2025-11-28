@@ -26,7 +26,7 @@ from sa import evaluate_solution, validate_speeds
 # =============================================================
 # MMAS PARAMETERS
 # =============================================================
-NUM_ANTS = 150
+NUM_ANTS = 90
 MAX_ITER = 300
 PHEROMONE_MAX = 5.0
 PHEROMONE_MIN = 0.001
