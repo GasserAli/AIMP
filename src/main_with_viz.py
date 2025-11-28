@@ -510,6 +510,9 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, mmas_r
     except IOError as e:
         print(f"  ERROR: Could not save raw data CSV. {e}")
 
+
+
+
 # =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
@@ -602,7 +605,7 @@ def main():
             geom=geom,
             tau_p_dict=tau_p_dict,
             swarm_size=25,
-            iters=80,
+            iters=100,
             visualize=True,
             verbose=True
         )

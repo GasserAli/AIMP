@@ -26,8 +26,8 @@ from sa import evaluate_solution, validate_speeds
 # =============================================================
 # MMAS PARAMETERS
 # =============================================================
-NUM_ANTS = 90
-MAX_ITER = 400
+NUM_ANTS = 150
+MAX_ITER = 300
 PHEROMONE_MAX = 5.0
 PHEROMONE_MIN = 0.001
 EVAP_RATE = 0.6
@@ -150,6 +150,7 @@ def build_priority_heuristic(vehicles: List[Vehicle], geom: Geometry) -> np.ndar
 
     n = len(vehicles)
     eta = np.ones((n, n), dtype=float)
+
 
 
     # -----------------------------------------------------------

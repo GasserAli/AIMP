@@ -33,7 +33,7 @@ ALPHA = 1.0                      # α: Pheromone importance
 BETA = 2.0                       # β: Heuristic importance  
 RHO = 0.6                        # ρ: Evaporation rate (0 < ρ < 1)
 Q = 100.0                        # Q: Pheromone deposit constant
-TAU_INITIAL = 0.1                # Initial pheromone level
+TAU_INITIAL = 0.001                # Initial pheromone level
 ELITIST_WEIGHT = 2            # Weight for best-so-far solution (elitist AS)
 
 # Early stopping
