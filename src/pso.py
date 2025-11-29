@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
 from mmas import generate_speeds_for_permutation , run_mmas
 import config
 from sa import evaluate_solution, validate_speeds
+random.seed(42)
+np.random.seed(42)
 
 
 # =============================================================
@@ -241,10 +243,10 @@ if __name__ == "__main__":
     )
 
     # final evaluation using decoder
-    final_obj_dict = evaluate_solution(perm_best, best_speeds_pso, geom, tau_p_dict)
+    #final_obj_dict = evaluate_solution(perm_best, best_speeds_pso, geom, tau_p_dict)
     print("\nFINAL HYBRID RESULTS:")
     print("Permutation:", [v.id for v in perm_best])
     print("Final speeds (PSO):", [round(s, 3) for s in best_speeds_pso])
     print("MMAS cost (before PSO):", best_cost_mmas)
     print("PSO cost (after):", best_cost_pso)
-    print("Final decoded objective (f):", final_obj_dict.get("f"))
+    #print("Final decoded objective (f):", final_obj_dict.get("f"))

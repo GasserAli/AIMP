@@ -33,6 +33,9 @@ COOLING_RATE = 0.99
 MAX_ITER_PER_TEMP = 10               # evaluations per temperature
 MAX_TOTAL_ITERATIONS = 100000        # global max evaluations
 
+# Do not rebind the `config` module. Each run will make a local deep-copy
+# of the scenario to avoid cross-contamination between optimizers and the
+# visualizer. See `run_sa()` for the per-run deepcopy.
 
 # ================================================================
 # Initial Solution Generator
@@ -42,7 +45,10 @@ def create_initial_solution(geom):
     Generates initial permutation & speeds.
     Respects no-catch-up constraint.
     """
-    initial_perm = copy.deepcopy(config.pi)
+    # Build the initial permutation from the vehicles present in the
+    # provided geometry's entry queues. This keeps permutation vehicle
+    # objects aligned with the `geom` instance used in evaluation.
+    initial_perm = [v for q in geom.entry_queues.values() for v in q if v]
     random.shuffle(initial_perm)
 
     initial_speeds_dict = {}
@@ -271,14 +277,17 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     if verbose:
         print("=== Starting Simulated Annealing ===")
 
-    # prepare geometry
+    # prepare a local deep-copy of the scenario so modifications (paths,
+    # velocities, etc.) inside SA don't mutate the global `config.pi`.
+    local_vehicles = copy.deepcopy(config.pi)
+
     geom = Geometry()
-    geom.create_entry_queue(config.pi)
-    for v in config.pi:
+    geom.create_entry_queue(local_vehicles)
+    for v in local_vehicles:
         geom.set_trajectory(v)
 
-    # collect all conflict points
-    all_points = set().union(*(v.path for v in config.pi if v.path))
+    # collect all conflict points from the local scenario
+    all_points = set().union(*(v.path for v in local_vehicles if v.path))
     tau_p_dict = {p: config.tau for p in all_points}
 
     # initial solution

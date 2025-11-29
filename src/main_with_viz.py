@@ -84,11 +84,14 @@ except Exception as e:
 
 # --- Import MMAS (new) ---
 try:
-    from mmas import run_mmas , MAX_ITER
+    from mmas import run_mmas , MAX_ITER, generate_speeds_for_permutation
     MMAS_IMPORTED = True
 except Exception as e:
     print(f"WARNING: Could not import mmas.py: {e}")
     MMAS_IMPORTED = False
+
+from pso import pso_optimize_speeds
+
 
 # =============================================================================
 # CONFIGURATION
@@ -601,7 +604,7 @@ def main():
         # STEP 1 — Run MMAS -->
         #   returns best permutation + initial speeds
         # ---------------------------------------------
-        perm_best, speeds_best, obj_mmas, mmas_history, geom, tau_p_dict, evals_mmas = run_mmas(
+        perm_best, speeds_best, obj_mmas, mmas_history, geom_new, tau_p_dict, evals_mmas = run_mmas(
             max_iter=MAX_ITER,
             visualize_realtime=True
         )
@@ -618,7 +621,6 @@ def main():
         print("======================\n")
 
         # Import lightweight PSO optimizer
-        from pso import pso_optimize_speeds
 
         # Seed PSO with initial MMAS speeds
         vmin, vmax = config.velocity_range
@@ -627,7 +629,7 @@ def main():
         best_speeds_pso, obj_pso, pso_history = pso_optimize_speeds(
             permutation=perm_best,
             init_speeds=init_speeds,
-            geom=geom,
+            geom=geom_new,
             tau_p_dict=tau_p_dict,
             swarm_size=25,
             iters=100,
@@ -690,19 +692,19 @@ def main():
 
         print("\n--- RUNNING MMAS (Permutation Only) ---")
         (mmas_perm, mmas_speeds, mmas_obj, mmas_history,
-        mmas_geom, mmas_tau, mmas_evals) = run_mmas(max_iter=MAX_ITER)
+        mmas_geom, mmas_tau, mmas_evals) = run_mmas(max_iter=150, visualize_realtime=True )  
+        init_speeds = mmas_speeds[:]  # direct seed
 
         print("\n--- APPLYING PSO ON TOP OF MMAS PERMUTATION ---")
-        from pso import pso_optimize_speeds
 
         best_speeds_pso, obj_pso, pso_hist = pso_optimize_speeds(
             permutation=mmas_perm,
-            init_speeds=mmas_speeds,
+            init_speeds= init_speeds,
             geom=mmas_geom,
             tau_p_dict=mmas_tau,
             swarm_size=25,
-            iters=120,
-            visualize=False,
+            iters=100,
+            visualize=True,
             verbose=True
         )
 
