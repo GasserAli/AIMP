@@ -75,14 +75,14 @@ import scipy.stats as stats
 
 # --- Import Project Files ---
 import config 
-import objective
-from geometry import Geometry
-from decoder import run_decoder
-from vehicle import Vehicle
-import sa
+import engine.objective as objective
+from engine.geometry import Geometry
+from engine.decoder import run_decoder
+from engine.vehicle import Vehicle
+import metahueristics.sa as sa
 
 # --- Import Algorithms ---
-from sa import (
+from metahueristics.sa import (
     run_sa, 
     plot_results as plot_sa_results, 
     evaluate_solution,
@@ -90,7 +90,7 @@ from sa import (
     create_initial_solution as sa_create_initial_solution
 )
 try:
-    from ga import run_ga, plot_ga_performance_dashboard, create_initial_population
+    from metahueristics.ga import run_ga, plot_ga_performance_dashboard, create_initial_population
     GA_IMPORTED = True
 except ImportError as e:
     print(f"WARNING: Could not import ga.py: {e}")
@@ -108,18 +108,18 @@ except ImportError as e:
 # 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA (natural stops).
-OPTIMIZATION_ALGORITHM = 'GA' 
+OPTIMIZATION_ALGORITHM = 'GA'  # 'SA', 'GA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'BOTH', 'EXPERIMENT'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
 # (Ignored for 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS' modes)
-VISUALIZATION_METHOD = 'matplotlib' 
+VISUALIZATION_METHOD = 'matplotlib'  # 'matplotlib', 'web', 'none'
 
 # --- 3. ALGORITHM PARAMETERS ---
 # Budget for *direct comparison modes only* ('BOTH')
 COMPARISON_EVALUATION_BUDGET = 5000 
 # Number of runs for 'SA_ANALYSIS', 'GA_ANALYSIS', 'EXPERIMENT'
-NUM_EXPERIMENT_RUNS = 50  # 
+NUM_EXPERIMENT_RUNS = 10  # 
 RANDOM_SEED = 42 
 
 # SA Parameters (used for 'SA' and 'SA_ANALYSIS')
@@ -130,7 +130,7 @@ MAX_ITER_PER_TEMP = sa.MAX_ITER_PER_TEMP
 
 # GA Parameters (used for 'GA' and 'GA_ANALYSIS')
 if GA_IMPORTED:
-    from ga import (
+    from metahueristics.ga import (
         POPULATION_SIZE, NUM_GENERATIONS, ELITISM_RATE, 
         TOURNAMENT_SIZE, MUTATION_RATE_PERM, MUTATION_RATE_SPEED
     )
@@ -152,7 +152,7 @@ is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS
 
 if not is_analysis_mode and VISUALIZATION_METHOD == 'matplotlib':
     try:
-        from visualization import IntersectionVisualization
+        from visualization.visualization import IntersectionVisualization
         animation_enabled = True
         print("Matplotlib visualization enabled (SMOOTH animation)")
     except ImportError as e:
@@ -160,7 +160,7 @@ if not is_analysis_mode and VISUALIZATION_METHOD == 'matplotlib':
 
 elif not is_analysis_mode and VISUALIZATION_METHOD == 'web':
     try:
-        from visualization_utils import IntersectionVisualizer
+        from visualization.visualization_utils import IntersectionVisualizer
         web_viz_enabled = True
         print("Web-based visualization enabled")
     except ImportError as e:

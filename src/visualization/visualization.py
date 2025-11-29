@@ -13,8 +13,8 @@ import math
 from typing import List, Dict, Tuple
 
 try:
-    from vehicle import Vehicle
-    from geometry import Geometry 
+    from engine.vehicle import Vehicle
+    from engine.geometry import Geometry 
 except ImportError:
     print("Error: Could not import Vehicle or Geometry class from vehicle.py/geometry.py")
     class Vehicle: pass

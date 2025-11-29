@@ -1,16 +1,23 @@
 # File: config.py
 import random
-from vehicle import Vehicle  # Import the Vehicle class from vehicle.py
+from engine.vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 
-# --- Tunable Parameters ---
-velocity_range = (10,12)  # Minimum and maximum velocity for all vehicles
-tau = 1.0                # Headway time (in seconds)
+# --- Tunable Config Parameters, this is the enviroment setup ---
+velocity_range = (6,18)  # Minimum and maximum velocity for all vehicles
+avg_velocity = sum(velocity_range) / 2  # Average velocity for reference
+avg_vehicle_length = 4.5  # Average vehicle length (in meters)
+tau = avg_vehicle_length/avg_velocity   # Headway time (in seconds)
 alpha = 1.0              # Weight for emergency vehicle delay
 beta = 1.0               # Weight for all vehicle delay
 safety_distance = 2    # Safety distance between vehicles (in meters)
-inter_conflict_distance = 2  # Distance between conflict points (in meters)
+inter_conflict_distance = 5  # Distance between conflict points (in meters)
 
-# --- MODIFICATION: New randomly generated static list of 60 vehicles ---
+# --- Constraint Allowance ---
+speed_penalty_coeff = 0.0   # penalize solutions with speeds far from v_max
+# conflict_weight = 0.0  # penalize conflicts in objective function
+follow_slack= 0.2  # Additional slack time for following vehicles (in seconds), this allows more flexibilty for constraint C0
+
+
 pi = [
     Vehicle(vehicle_id=1, approach="W", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=2, approach="N", maneuver="S", priority_status=False, velocity=velocity_range),
@@ -62,7 +69,7 @@ pi = [
     # Vehicle(vehicle_id=48, approach="S", maneuver="S", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=49, approach="W", maneuver="L", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=50, approach="E", maneuver="R", priority_status=False, velocity=velocity_range),
-    # # Vehicle(vehicle_id=51, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),
+    # Vehicle(vehicle_id=51, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=52, approach="N", maneuver="S", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=53, approach="W", maneuver="S", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=54, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),

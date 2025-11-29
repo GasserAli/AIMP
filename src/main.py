@@ -5,13 +5,13 @@ import random
 import config
 
 # Import the necessary classes and functions
-from geometry import Geometry
+from engine.geometry import Geometry
 # --- Use the final, correct decoder and objective functions ---
-from decoder import run_decoder # Make sure this is the final version
-from objective import calculate_objective
+from engine.decoder import run_decoder # Make sure this is the final version
+from engine.objective import calculate_objective
 # -----------------------------------------------------------
 # Import Vehicle class for type hinting if needed, though config handles creation
-from vehicle import Vehicle
+from engine.vehicle import Vehicle
 
 def main():
     """

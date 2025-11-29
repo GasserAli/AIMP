@@ -11,19 +11,19 @@ from typing import Tuple
 
 # --- Import Project Files ---
 import config
-from geometry import Geometry
-from vehicle import Vehicle
-from sa import evaluate_solution, validate_speeds
+from engine.geometry import Geometry
+from engine.vehicle import Vehicle
+from metahueristics.sa import evaluate_solution, validate_speeds
 
 # =============================================================================
 # GA PARAMETERS
 # =============================================================================
 POPULATION_SIZE = 150
 NUM_GENERATIONS = 300
-ELITISM_RATE = 0.07
-TOURNAMENT_SIZE = 80
-MUTATION_RATE_PERM = 0.7
-MUTATION_RATE_SPEED = 0.9
+ELITISM_RATE = 0.1
+TOURNAMENT_SIZE = 5
+MUTATION_RATE_PERM = 0.2
+MUTATION_RATE_SPEED = 0.2
 
 # --- MODIFICATION: Added early stopping patience ---
 CONVERGENCE_PATIENCE = 25 # Stop if no improvement after 25 generations
@@ -396,6 +396,8 @@ def run_ga(max_evaluations=None, initial_population=None, verbose=True, visualiz
         print(f"Total generations: {gen + 1}")
         print(f"Total evaluations: {eval_count}")
         print(f"Best Objective (f): {best_fitness:.2f}")
+        print(f"best permutation (IDs): {[v.id for v in best_solution.permutation]}")
+        print(f"Best Speeds: {[round(s,2) for s in best_solution.speeds]}")
     
     best_solution_obj_dict = {
         "f": best_solution.f,

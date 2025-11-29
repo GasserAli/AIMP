@@ -1,6 +1,6 @@
 import requests
 import threading
-from visualization_server import start_server
+from visualization.visualization_server import start_server
 import config
 
 class IntersectionVisualizer:
