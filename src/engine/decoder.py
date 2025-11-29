@@ -47,6 +47,12 @@ def run_decoder(permutation: List[Vehicle],
     # Map vehicle IDs to speeds for quick lookup
     speeds_dict = {p.id: s for p, s in zip(permutation, speeds)}
 
+    # Build queue_predecessors map for C0 constraint (followers cannot overtake leaders)
+    queue_predecessors = {}
+    for queue in geom_init.entry_queues.values():
+        for idx in range(1, len(queue)):
+            queue_predecessors[queue[idx].id] = queue[idx-1].id
+
     # --- 2. Calculate Realistic t_ear (Earliest Arrival at First Point) ---
     # CRITICAL FIX: Use MAXIMUM speed (v_max) to calculate t_ear, NOT the vehicle's assigned speed
     # This ensures t_ear is INDEPENDENT of optimizer decisions, so delays are computed fairly
@@ -149,6 +155,15 @@ def run_decoder(permutation: List[Vehicle],
                 travel_time = distance / max(v_assigned, 1e-6)
 
                 t_reach = t_prev_departure + travel_time
+
+            # --- C0 CONSTRAINT: Enforce queue order (followers cannot overtake leaders) ---
+            if v_id in queue_predecessors:
+                leader_id = queue_predecessors[v_id]
+                if leader_id in scheduled_times and p in scheduled_times[leader_id]:
+                    # Leader has been scheduled at this point, ensure follower comes after
+                    leader_arrival = scheduled_times[leader_id][p]
+                    min_follower_time = leader_arrival + 0.01  # Minimum gap
+                    t_reach = max(t_reach, min_follower_time)
 
             # --- Determine Scheduled Time (t_scheduled) ---
             # [cite_start]Earliest time the *current point* is free (based on [cite: 145])

@@ -32,7 +32,7 @@ def create_initial_solution(geom):
     Generates a valid initial solution (permutation, speeds).
     Respects C0 constraint.
     """
-    initial_perm = copy.deepcopy(config.pi)
+    initial_perm = [v for q in geom.entry_queues.values() for v in q]
     random.shuffle(initial_perm)
     
     initial_speeds_dict = {}
@@ -80,7 +80,7 @@ def validate_speeds(permutation, speeds, geom):
     """
     v_new = list(speeds)
     speed_dict = {p.id: s for p, s in zip(permutation, v_new)}
-    epsilon = getattr(config, "follow_slack", 0.05)  # m/s slack; tune 0.01-0.5
+    epsilon = getattr(config, "follow_slack", 0.00)  # m/s slack; tune 0.01-0.5
 
     for queue in geom.entry_queues.values():
         if not queue: 
@@ -250,12 +250,14 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     if verbose:
         print("--- Starting Simulated Annealing ---")
         print("Initializing geometry and parameters...")
-        
-    geom_for_validation = Geometry()
+
     all_vehicles = copy.deepcopy(config.pi)
+
+    geom_for_validation = Geometry()
     geom_for_validation.create_entry_queue(all_vehicles)
     for v in all_vehicles:
         geom_for_validation.set_trajectory(v)
+
     all_points = set().union(*(v.path for v in all_vehicles if v.path))
     if not all_points:
         print("Error: No vehicles or no paths found. Exiting.")

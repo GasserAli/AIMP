@@ -105,6 +105,21 @@ except ImportError as e:
     print("  'ACO', 'ACO_ANALYSIS', and ACO comparison modes will not be available.")
     ACO_IMPORTED = False
 
+try:
+    from metahueristics.pso import run_pso, plot_pso_performance_dashboard
+    PSO_IMPORTED = True
+except ImportError as e:
+    print(f"WARNING: Could not import pso.py: {e}")
+    PSO_IMPORTED = False
+
+try:
+    from metahueristics.sequential_hybrid import run_sequential_hybrid, plot_sequential_hybrid_dashboard
+    HYBRID_IMPORTED = True
+except ImportError as e:
+    print(f"WARNING: Could not import sequential_hybrid.py: {e}")
+    print("  'HYBRID', 'HYBRID_ANALYSIS' modes will not be available.")
+    HYBRID_IMPORTED = False
+
 
 # =============================================================================
 # CONFIGURATION
@@ -113,12 +128,15 @@ except ImportError as e:
 # 'SA':          Single run of SA (uses sa.MAX_TOTAL_ITERATIONS).
 # 'GA':          Single run of GA (uses ga.NUM_GENERATIONS).
 # 'ACO':         Single run of ACO (uses aco.NUM_ITERATIONS).
+# 'PSO':         Single run of PSO (uses pso.NUM_ITERATIONS).
+# 'HYBRID':      Single run of Hybrid ACO+PSO (uses ACO and PSO iterations).
 # 'SA_ANALYSIS': N-run statistical analysis of SA (natural stop).
 # 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
 # 'ACO_ANALYSIS': N-run statistical analysis of ACO (natural stop).
+# 'PSO_ANALYSIS': N-run statistical analysis of PSO (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
-# 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. ACO (natural stops).
-OPTIMIZATION_ALGORITHM = 'EXPERIMENT'  # 'SA', 'GA', 'ACO', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'BOTH', 'EXPERIMENT'
+# 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. ACO vs. PSO (natural stops).
+OPTIMIZATION_ALGORITHM = 'PSO'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'BOTH', 'EXPERIMENT'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -169,13 +187,32 @@ else:
     TAU_INITIAL = 0.1
     ELITIST_WEIGHT = 2.0
     ACO_CONVERGENCE_PATIENCE = 20
+
+# PSO Parameters (used for 'PSO' and 'PSO_ANALYSIS')
+if PSO_IMPORTED:
+    from metahueristics.pso import (
+        SWARM_SIZE as PSO_SWARM_SIZE, 
+        NUM_ITERATIONS as PSO_NUM_ITERATIONS,
+        W as PSO_W, 
+        C1 as PSO_C1, 
+        C2 as PSO_C2,
+        CONVERGENCE_PATIENCE as PSO_CONVERGENCE_PATIENCE
+    )
+else:
+    # Default values if PSO not imported, to prevent errors
+    PSO_SWARM_SIZE = 30
+    PSO_NUM_ITERATIONS = 100
+    PSO_W = 0.6
+    PSO_C1 = 1.4
+    PSO_C2 = 1.4
+    PSO_CONVERGENCE_PATIENCE = 20
 # =============================================================================
 
 
 # --- Conditional Imports Based on Visualization Method ---
 animation_enabled = False
 web_viz_enabled = False
-is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS')
+is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS')
 
 if not is_analysis_mode and VISUALIZATION_METHOD == 'matplotlib':
     try:
@@ -260,10 +297,10 @@ def plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals):
     plt.tight_layout()
     plt.show()
 
-def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_evals=None, history_aco=None, aco_evals=None):
-    """Overlay SA, GA, and optionally ACO histories on a single 2x2 comparison grid.
+def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_evals=None, history_hybrid=None, hybrid_evals=None):
+    """Overlay SA, GA, and optionally HYBRID histories on a single 2x2 comparison grid.
 
-    Accepts history dicts produced by `run_sa`, `run_ga`, and `run_aco` (formats used in this project).
+    Accepts history dicts produced by `run_sa`, `run_ga`, and `run_sequential_hybrid` (formats used in this project).
     The function will look for common keys and plot matching series; missing series are skipped.
     """
     def first(h, options):
@@ -317,16 +354,16 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
     emergency_delays_sa = first(history_sa, ['emergency_delays', 'emergency_delays'])
     emergency_delays_ga = first(history_ga, ['best_fem', 'emergency_delays'])
 
-    # ACO data extraction
-    costs_aco = []
-    avg_delays_aco = []
-    total_delays_aco = []
-    emergency_delays_aco = []
-    if history_aco:
-        costs_aco = first(history_aco, ['best_f', 'costs', 'best'])
-        avg_delays_aco = first(history_aco, ['best_avg_delay', 'avg_delays'])
-        total_delays_aco = first(history_aco, ['best_fall', 'total_delays'])
-        emergency_delays_aco = first(history_aco, ['best_fem', 'emergency_delays'])
+    # HYBRID data extraction
+    costs_hybrid = []
+    avg_delays_hybrid = []
+    total_delays_hybrid = []
+    emergency_delays_hybrid = []
+    if history_hybrid:
+        costs_hybrid = first(history_hybrid, ['best_f', 'costs', 'best'])
+        avg_delays_hybrid = first(history_hybrid, ['best_avg_delay', 'avg_delays'])
+        total_delays_hybrid = first(history_hybrid, ['best_fall', 'total_delays'])
+        emergency_delays_hybrid = first(history_hybrid, ['best_fem', 'emergency_delays'])
 
     # Prepare x-axis mapping to NUMBER OF FITNESS EVALUATIONS
     # GA: history entries are per-generation. Map generation index to cumulative evaluation counts.
@@ -370,39 +407,36 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
     x_total_delays_ga, total_delays_ga = ga_align_and_clip(total_delays_ga, ga_eval_points)
     x_emergency_delays_ga, emergency_delays_ga = ga_align_and_clip(emergency_delays_ga, ga_eval_points)
     
-    # ACO x arrays and clipped series (ACO uses iteration-based evaluation)
-    x_costs_aco = np.array([])
-    x_avg_delays_aco = np.array([])
-    x_total_delays_aco = np.array([])
-    x_emergency_delays_aco = np.array([])
-    if history_aco and costs_aco:
-        # ACO iterations map to evaluations: each iteration evaluates NUM_ANTS solutions
-        aco_len = len(costs_aco)
-        if ACO_IMPORTED:
-            aco_evals_per_iter = NUM_ANTS
-        else:
-            aco_evals_per_iter = 50  # Default
-        aco_eval_points = [aco_evals_per_iter * (i + 1) for i in range(aco_len)]
+    # HYBRID x arrays and clipped series (HYBRID uses combined ACO+PSO evaluation)
+    x_costs_hybrid = np.array([])
+    x_avg_delays_hybrid = np.array([])
+    x_total_delays_hybrid = np.array([])
+    x_emergency_delays_hybrid = np.array([])
+    if history_hybrid and costs_hybrid:
+        # HYBRID: combined history from ACO and PSO phases
+        hybrid_len = len(costs_hybrid)
+        # Simply map iterations to evaluation indices
+        hybrid_eval_points = list(range(1, hybrid_len + 1))
         
         # Clip to budget if provided
-        if aco_evals is not None and aco_eval_points:
-            clip_idx = np.searchsorted(aco_eval_points, aco_evals, side='right')
-            aco_eval_points = aco_eval_points[:clip_idx]
-            costs_aco = costs_aco[:clip_idx]
-            avg_delays_aco = avg_delays_aco[:clip_idx] if avg_delays_aco else []
-            total_delays_aco = total_delays_aco[:clip_idx] if total_delays_aco else []
-            emergency_delays_aco = emergency_delays_aco[:clip_idx] if emergency_delays_aco else []
+        if hybrid_evals is not None and hybrid_eval_points:
+            clip_idx = min(hybrid_evals, len(hybrid_eval_points))
+            hybrid_eval_points = hybrid_eval_points[:clip_idx]
+            costs_hybrid = costs_hybrid[:clip_idx]
+            avg_delays_hybrid = avg_delays_hybrid[:clip_idx] if avg_delays_hybrid else []
+            total_delays_hybrid = total_delays_hybrid[:clip_idx] if total_delays_hybrid else []
+            emergency_delays_hybrid = emergency_delays_hybrid[:clip_idx] if emergency_delays_hybrid else []
         
-        x_costs_aco = np.array(aco_eval_points)
-        x_avg_delays_aco = np.array(aco_eval_points[:len(avg_delays_aco)])
-        x_total_delays_aco = np.array(aco_eval_points[:len(total_delays_aco)])
-        x_emergency_delays_aco = np.array(aco_eval_points[:len(emergency_delays_aco)])
+        x_costs_hybrid = np.array(hybrid_eval_points)
+        x_avg_delays_hybrid = np.array(hybrid_eval_points[:len(avg_delays_hybrid)])
+        x_total_delays_hybrid = np.array(hybrid_eval_points[:len(total_delays_hybrid)])
+        x_emergency_delays_hybrid = np.array(hybrid_eval_points[:len(emergency_delays_hybrid)])
     
     # Determine title based on what algorithms are present
     title_parts = []
     if history_sa: title_parts.append(labels[0] if len(labels) > 0 else 'SA')
     if history_ga: title_parts.append(labels[1] if len(labels) > 1 else 'GA')
-    if history_aco: title_parts.append(labels[2] if len(labels) > 2 else 'ACO')
+    if history_hybrid: title_parts.append(labels[2] if len(labels) > 2 else 'HYBRID')
     title = f"Overlay: {' vs '.join(title_parts)}"
     
     fig, axs = plt.subplots(2, 2, figsize=(13, 9))
@@ -414,15 +448,15 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         ax.plot(x_costs_sa, costs_sa, label=f"{labels[0]} best", color='tab:blue')
     if x_costs_ga.size:
         ax.plot(x_costs_ga, costs_ga, label=f"{labels[1]} best", color='tab:orange')
-    if x_costs_aco.size:
-        aco_label = labels[2] if len(labels) > 2 else 'ACO'
-        ax.plot(x_costs_aco, costs_aco, label=f"{aco_label} best", color='tab:green')
+    if x_costs_hybrid.size:
+        hybrid_label = labels[2] if len(labels) > 2 else 'HYBRID'
+        ax.plot(x_costs_hybrid, costs_hybrid, label=f"{hybrid_label} best", color='tab:green')
     if x_avg_sa.size:
         ax.plot(x_avg_sa, avg_sa, label=f"{labels[0]} avg", color='tab:cyan', linestyle=':')
     if x_avg_ga.size:
         ax.plot(x_avg_ga, avg_ga, label=f"{labels[1]} avg", color='tab:gray', linestyle='-.')
-    ax.set_title('Objective Cost vs Evaluations')
-    ax.set_xlabel('Number of Fitness Evaluations')
+    ax.set_title('Objective Cost vs Iterations')
+    ax.set_xlabel('Iteration')
     ax.set_ylabel('Cost (f)')
     ax.grid(True)
     ax.legend(loc='upper left')
@@ -433,11 +467,11 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         ax.plot(x_avg_delays_sa, avg_delays_sa, label=f"{labels[0]}", color='tab:green')
     if x_avg_delays_ga.size:
         ax.plot(x_avg_delays_ga, avg_delays_ga, label=f"{labels[1]}", color='tab:red')
-    if x_avg_delays_aco.size and len(avg_delays_aco) > 0:
-        aco_label = labels[2] if len(labels) > 2 else 'ACO'
-        ax.plot(x_avg_delays_aco, avg_delays_aco, label=f"{aco_label}", color='tab:purple')
+    if x_avg_delays_hybrid.size and len(avg_delays_hybrid) > 0:
+        hybrid_label = labels[2] if len(labels) > 2 else 'HYBRID'
+        ax.plot(x_avg_delays_hybrid, avg_delays_hybrid, label=f"{hybrid_label}", color='tab:purple')
     ax.set_title('Average Delay per Vehicle')
-    ax.set_xlabel('Number of Fitness Evaluations')
+    ax.set_xlabel('Iteration')
     ax.set_ylabel('Avg Delay (s)')
     ax.grid(True)
     ax.legend(loc='upper left')
@@ -448,11 +482,11 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         ax.plot(x_total_delays_sa, total_delays_sa, label=f"{labels[0]}", color='tab:cyan')
     if x_total_delays_ga.size:
         ax.plot(x_total_delays_ga, total_delays_ga, label=f"{labels[1]}", color='tab:olive')
-    if x_total_delays_aco.size and len(total_delays_aco) > 0:
-        aco_label = labels[2] if len(labels) > 2 else 'ACO'
-        ax.plot(x_total_delays_aco, total_delays_aco, label=f"{aco_label}", color='tab:brown')
+    if x_total_delays_hybrid.size and len(total_delays_hybrid) > 0:
+        hybrid_label = labels[2] if len(labels) > 2 else 'HYBRID'
+        ax.plot(x_total_delays_hybrid, total_delays_hybrid, label=f"{hybrid_label}", color='tab:brown')
     ax.set_title('Total Delay (f_all)')
-    ax.set_xlabel('Number of Fitness Evaluations')
+    ax.set_xlabel('Iteration')
     ax.set_ylabel('Total Delay (s)')
     ax.grid(True)
     ax.legend(loc='upper left')
@@ -463,11 +497,11 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         ax.plot(x_emergency_delays_sa, emergency_delays_sa, label=f"{labels[0]}", color='tab:blue')
     if x_emergency_delays_ga.size:
         ax.plot(x_emergency_delays_ga, emergency_delays_ga, label=f"{labels[1]}", color='tab:orange')
-    if x_emergency_delays_aco.size and len(emergency_delays_aco) > 0:
-        aco_label = labels[2] if len(labels) > 2 else 'ACO'
-        ax.plot(x_emergency_delays_aco, emergency_delays_aco, label=f"{aco_label}", color='tab:pink')
+    if x_emergency_delays_hybrid.size and len(emergency_delays_hybrid) > 0:
+        hybrid_label = labels[2] if len(labels) > 2 else 'HYBRID'
+        ax.plot(x_emergency_delays_hybrid, emergency_delays_hybrid, label=f"{hybrid_label}", color='tab:pink')
     ax.set_title('Emergency Delay (f_em)')
-    ax.set_xlabel('Number of Fitness Evaluations')
+    ax.set_xlabel('Iteration')
     ax.set_ylabel('Emergency Delay (s)')
     ax.grid(True)
     ax.legend(loc='upper left')
@@ -505,7 +539,7 @@ def plot_experiment_results(results_data, labels):
     data = results_data
     
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.boxplot(data, labels=labels, patch_artist=True,
+    ax.boxplot(data, tick_labels=labels, patch_artist=True,
                 boxprops=dict(facecolor='lightblue', color='blue'),
                 medianprops=dict(color='red', linewidth=2))
     
@@ -657,7 +691,9 @@ def save_experiment_summary(timestamp, all_stats):
                     'Avg Run Time (s)', 'Best Cost Overall', 'Num Runs', 
                     'Avg Evals Used', # <-- This is the important change
                     'SA_T_Init', 'SA_T_Min', 'SA_Cool_Rate', 'SA_Iter_Per_Temp',
-                    'GA_Pop_Size', 'GA_Generations', 'GA_Elitism', 'GA_Tourn_Size', 'GA_Mut_Perm', 'GA_Mut_Speed'
+                    'GA_Pop_Size', 'GA_Generations', 'GA_Elitism', 'GA_Tourn_Size', 'GA_Mut_Perm', 'GA_Mut_Speed',
+                    'ACO_Num_Ants', 'ACO_Num_Iter', 'ACO_Alpha', 'ACO_Rho', 'ACO_Q', 'ACO_Tau_Init', 'ACO_Elitist_Weight',
+                    'PSO_Num_Iter', 'PSO_Swarm_Size', 'PSO_W', 'PSO_C1', 'PSO_C2', 'PSO_Convergence_Patience'
                 ])
             
             if 'SA' in all_stats:
@@ -666,7 +702,9 @@ def save_experiment_summary(timestamp, all_stats):
                     timestamp, 'SA', stats['mean'], stats['std'], stats['time'], stats['best'],
                     NUM_EXPERIMENT_RUNS, stats['avg_evals'], # <-- MODIFIED
                     T_INITIAL, T_MIN, COOLING_RATE, MAX_ITER_PER_TEMP,
-                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A' 
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A' ,
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A',
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A'
                 ])
             if 'GA' in all_stats:
                 stats = all_stats['GA']
@@ -674,14 +712,36 @@ def save_experiment_summary(timestamp, all_stats):
                     timestamp, 'GA', stats['mean'], stats['std'], stats['time'], stats['best'],
                     NUM_EXPERIMENT_RUNS, stats['avg_evals'], # <-- MODIFIED
                     'N/A', 'N/A', 'N/A', 'N/A',
-                    POPULATION_SIZE, NUM_GENERATIONS, ELITISM_RATE, TOURNAMENT_SIZE, MUTATION_RATE_PERM, MUTATION_RATE_SPEED
+                    POPULATION_SIZE, NUM_GENERATIONS, ELITISM_RATE, TOURNAMENT_SIZE, MUTATION_RATE_PERM, MUTATION_RATE_SPEED,
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A',
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A'
+                ])
+            if 'ACO' in all_stats:
+                stats = all_stats['ACO']
+                writer.writerow([
+                    timestamp, 'ACO', stats['mean'], stats['std'], stats['time'], stats['best'],
+                    NUM_EXPERIMENT_RUNS, stats['avg_evals'], # <-- MODIFIED
+                    'N/A', 'N/A', 'N/A', 'N/A',
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A',
+                    NUM_ANTS, NUM_ITERATIONS, ALPHA, RHO, Q, TAU_INITIAL, ELITIST_WEIGHT,
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A'
+                ])
+            if 'PSO' in all_stats:
+                stats = all_stats['PSO']
+                writer.writerow([
+                    timestamp, 'PSO', stats['mean'], stats['std'], stats['time'], stats['best'],
+                    NUM_EXPERIMENT_RUNS, stats['avg_evals'], # <-- MODIFIED
+                    'N/A', 'N/A', 'N/A', 'N/A',
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A',
+                    'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A',
+                    PSO_NUM_ITERATIONS, PSO_SWARM_SIZE, PSO_W, PSO_C1, PSO_C2, PSO_CONVERGENCE_PATIENCE
                 ])
         print(f"  Successfully appended summary to: {SUMMARY_FILENAME}")
     except IOError as e:
         print(f"  ERROR: Could not save summary CSV. {e}")
 
 
-def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_evals=None, ga_evals=None, aco_results=None, aco_evals=None):
+def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_evals=None, ga_evals=None, aco_results=None, aco_evals=None, pso_results=None, pso_evals=None, hybrid_results=None, hybrid_evals=None):
     """
     Saves the raw final cost AND evals from every single run to a SINGLE master CSV file.
     Appends the new runs; creates header if file doesn't exist.
@@ -691,14 +751,16 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_eva
         with open(RAW_FILENAME, mode='a', newline='') as f:
             writer = csv.writer(f)
             if not file_exists:
-                # --- MODIFIED: Added ACO columns ---
-                writer.writerow(['Experiment_Timestamp', 'Run', 'SA_Final_Cost', 'SA_Evals', 'GA_Final_Cost', 'GA_Evals', 'ACO_Final_Cost', 'ACO_Evals'])
+                # --- MODIFIED: Added ACO, PSO, and HYBRID columns ---
+                writer.writerow(['Experiment_Timestamp', 'Run', 'SA_Final_Cost', 'SA_Evals', 'GA_Final_Cost', 'GA_Evals', 'ACO_Final_Cost', 'ACO_Evals', 'PSO_Final_Cost', 'PSO_Evals', 'HYBRID_Final_Cost', 'HYBRID_Evals'])
             
             # Determine max number of runs
             num_runs = 0
             if sa_results: num_runs = len(sa_results)
             if ga_results: num_runs = max(num_runs, len(ga_results))
             if aco_results: num_runs = max(num_runs, len(aco_results))
+            if pso_results: num_runs = max(num_runs, len(pso_results))
+            if hybrid_results: num_runs = max(num_runs, len(hybrid_results))
             
             for i in range(num_runs):
                 sa_val = sa_results[i] if sa_results and i < len(sa_results) else 'N/A'
@@ -707,8 +769,12 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_eva
                 ga_ev = ga_evals[i] if ga_evals and i < len(ga_evals) else 'N/A'
                 aco_val = aco_results[i] if aco_results and i < len(aco_results) else 'N/A'
                 aco_ev = aco_evals[i] if aco_evals and i < len(aco_evals) else 'N/A'
-                # --- MODIFIED: Write all data points including ACO ---
-                writer.writerow([timestamp, i+1, sa_val, sa_ev, ga_val, ga_ev, aco_val, aco_ev])
+                pso_val = pso_results[i] if pso_results and i < len(pso_results) else 'N/A'
+                pso_ev = pso_evals[i] if pso_evals and i < len(pso_evals) else 'N/A'
+                hybrid_val = hybrid_results[i] if hybrid_results and i < len(hybrid_results) else 'N/A'
+                hybrid_ev = hybrid_evals[i] if hybrid_evals and i < len(hybrid_evals) else 'N/A'
+                # --- MODIFIED: Write all data points including ACO, PSO, and HYBRID ---
+                writer.writerow([timestamp, i+1, sa_val, sa_ev, ga_val, ga_ev, aco_val, aco_ev, pso_val, pso_ev, hybrid_val, hybrid_ev])
                     
         print(f"  Successfully appended raw data to: {RAW_FILENAME}")
     except IOError as e:
@@ -730,7 +796,7 @@ def main():
     print("="*70)
     print(f"Selected Algorithm:   {OPTIMIZATION_ALGORITHM.upper()}")
     print(f"Visualization Method: {VISUALIZATION_METHOD.upper()}")
-    if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS'):
+    if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS'):
         print(f"Experiment Runs:      {NUM_EXPERIMENT_RUNS}")
     print("="*70 + "\n")
     
@@ -794,6 +860,50 @@ def main():
         elif web_viz_enabled:
             visualize_web(perm_best, speeds_best)
 
+    # --- Run PSO (Single Run) ---
+    elif OPTIMIZATION_ALGORITHM == 'PSO':
+        if not PSO_IMPORTED:
+            print("ERROR: PSO algorithm selected but pso.py could not be imported.")
+            return
+            
+        (perm_best, speeds_best, obj_best, pso_history, geom, 
+         tau_p_dict, best_pso_obj_dict, evals) = run_pso(
+            max_iterations=100,
+            visualize_realtime=True,
+            verbose=True
+        )
+        
+        print("\nDisplaying PSO performance plots...")
+        plot_pso_performance_dashboard(pso_history)
+        
+        print("  (Close all plot windows to continue to animation)")
+        if animation_enabled:
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+        elif web_viz_enabled:
+            visualize_web(perm_best, speeds_best)
+
+    # --- Run Hybrid ACO+PSO (Single Run) ---
+    elif OPTIMIZATION_ALGORITHM == 'HYBRID':
+        if not HYBRID_IMPORTED:
+            print("ERROR: HYBRID mode requires sequential_hybrid module.")
+            return
+            
+        (perm_best, speeds_best, obj_best, hybrid_history, geom, 
+         tau_p_dict, best_hybrid_obj_dict, evals, aco_iters, pso_iters) = run_sequential_hybrid(
+            aco_iterations=100,
+            pso_iterations=50,
+            verbose=True
+        )
+        
+        print("\nDisplaying Sequential Hybrid performance plots...")
+        plot_sequential_hybrid_dashboard(hybrid_history, aco_iters, pso_iters)
+        
+        print("  (Close all plot windows to continue to animation)")
+        if animation_enabled:
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+        elif web_viz_enabled:
+            visualize_web(perm_best, speeds_best)
+
     # --- Run BOTH (Single Run Comparison) ---
     elif OPTIMIZATION_ALGORITHM == 'BOTH':
         if not GA_IMPORTED:
@@ -836,7 +946,7 @@ def main():
             traceback.print_exc()
 
     # --- MODIFICATION: Split Experiment logic for "Natural Run" ---
-    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS'):
+    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS'):
         print("\n--- PREPARING EXPERIMENT (NATURAL RUN) ---")
         print(f"Running {NUM_EXPERIMENT_RUNS} times for selected algorithm(s).")
         
@@ -854,9 +964,13 @@ def main():
         sa_results = []
         ga_results = []
         aco_results = []
+        pso_results = []
+        hybrid_results = []
         sa_evals_list = []
         ga_evals_list = []
         aco_evals_list = []
+        pso_evals_list = []
+        hybrid_evals_list = []
         
         sa_best_obj_overall = math.inf
         sa_best_history_overall = {}
@@ -864,6 +978,12 @@ def main():
         ga_best_history_overall = {}
         aco_best_obj_overall = math.inf
         aco_best_history_overall = {}
+        pso_best_obj_overall = math.inf
+        pso_best_history_overall = {}
+        hybrid_best_obj_overall = math.inf
+        hybrid_best_history_overall = {}
+        hybrid_best_aco_iters = 100
+        hybrid_best_pso_iters = 50
         all_stats = {}
         
         # --- FIX: Defined experiment_timestamp here ---
@@ -950,8 +1070,8 @@ def main():
                     'avg_evals': np.mean(ga_evals_list)
                 }
 
-        # 5. Run ACO Experiment
-        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'ACO_ANALYSIS'):
+        # 5. Run ACO Experiment (DISABLED FOR EXPERIMENT MODE)
+        if OPTIMIZATION_ALGORITHM == 'ACO_ANALYSIS':
             if not ACO_IMPORTED:
                 print("WARNING: ACO selected for experiment but aco.py could not be imported. Skipping ACO.")
             else:
@@ -989,7 +1109,75 @@ def main():
                     'avg_evals': np.mean(aco_evals_list)
                 }
         
-        # 6. Calculate and Print Statistics
+        # 6. Run PSO Experiment (DISABLED FOR EXPERIMENT MODE)
+        if OPTIMIZATION_ALGORITHM == 'PSO_ANALYSIS':
+            if not PSO_IMPORTED:
+                print("WARNING: PSO selected but pso.py not imported. Skipping PSO.")
+            else:
+                print("\n" + "="*70)
+                print(f"RUNNING PSO EXPERIMENT ({NUM_EXPERIMENT_RUNS} runs)...")
+                print("="*70)
+                start_time_pso = time.time()
+                for i in range(NUM_EXPERIMENT_RUNS):
+                    print(f"  PSO Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
+                    (pso_perm, pso_speeds, pso_obj, pso_history, 
+                     pso_geom, pso_tau, pso_obj_dict, pso_evals) = run_pso(
+                        max_iterations=100,
+                        visualize_realtime=False,
+                        verbose=False
+                    )
+                    print(f"    ...Run {i+1} Best: {pso_obj:.2f} (in {pso_evals} evals)")
+                    pso_results.append(pso_obj)
+                    pso_evals_list.append(pso_evals)
+                    if pso_obj < pso_best_obj_overall:
+                        pso_best_obj_overall = pso_obj
+                        pso_best_history_overall = pso_history
+                end_time_pso = time.time()
+                
+                all_stats['PSO'] = {
+                    'mean': np.mean(pso_results),
+                    'std': np.std(pso_results),
+                    'time': (end_time_pso - start_time_pso) / NUM_EXPERIMENT_RUNS,
+                    'best': pso_best_obj_overall,
+                    'avg_evals': np.mean(pso_evals_list)
+                }
+        
+        # 7. Run HYBRID Experiment
+        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'HYBRID_ANALYSIS'):
+            if not HYBRID_IMPORTED:
+                print("WARNING: HYBRID requires sequential_hybrid module. Skipping HYBRID.")
+            else:
+                print("\n" + "="*70)
+                print(f"RUNNING SEQUENTIAL HYBRID EXPERIMENT ({NUM_EXPERIMENT_RUNS} runs)...")
+                print("="*70)
+                start_time_hybrid = time.time()
+                for i in range(NUM_EXPERIMENT_RUNS):
+                    print(f"  HYBRID Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
+                    (hybrid_perm, hybrid_speeds, hybrid_obj, hybrid_history,
+                     hybrid_geom, hybrid_tau, hybrid_obj_dict, hybrid_evals, aco_iters, pso_iters) = run_sequential_hybrid(
+                        aco_iterations=100,
+                        pso_iterations=50,
+                        verbose=False
+                    )
+                    print(f"    ...Run {i+1} Best: {hybrid_obj:.2f} (in {hybrid_evals} evals)")
+                    hybrid_results.append(hybrid_obj)
+                    hybrid_evals_list.append(hybrid_evals)
+                    if hybrid_obj < hybrid_best_obj_overall:
+                        hybrid_best_obj_overall = hybrid_obj
+                        hybrid_best_history_overall = hybrid_history
+                        hybrid_best_aco_iters = aco_iters
+                        hybrid_best_pso_iters = pso_iters
+                end_time_hybrid = time.time()
+                
+                all_stats['HYBRID'] = {
+                    'mean': np.mean(hybrid_results),
+                    'std': np.std(hybrid_results),
+                    'time': (end_time_hybrid - start_time_hybrid) / NUM_EXPERIMENT_RUNS,
+                    'best': hybrid_best_obj_overall,
+                    'avg_evals': np.mean(hybrid_evals_list)
+                }
+        
+        # 8. Calculate and Print Statistics
         print("\n" + "="*70)
         print("EXPERIMENT STATISTICAL RESULTS")
         print(f"(Based on {NUM_EXPERIMENT_RUNS} runs each with same initial state)")
@@ -1022,6 +1210,24 @@ def main():
             print(f"  Avg. Run Time (sec):   {stats['time']:.3f}")
             print(f"  Best Cost (Overall):   {stats['best']:.2f}")
         
+        if 'PSO' in all_stats:
+            stats = all_stats['PSO']
+            print("--- Particle Swarm Optimization (PSO) ---")
+            print(f"  Avg. Evals Used:     {stats['avg_evals']:.1f}")
+            print(f"  Mean (Avg. Best Cost): {stats['mean']:.2f}")
+            print(f"  Std. Deviation (Cost): {stats['std']:.2f}")
+            print(f"  Avg. Run Time (sec):   {stats['time']:.3f}")
+            print(f"  Best Cost (Overall):   {stats['best']:.2f}")
+        
+        if 'HYBRID' in all_stats:
+            stats = all_stats['HYBRID']
+            print("--- Hybrid ACO+PSO ---")
+            print(f"  Avg. Evals Used:     {stats['avg_evals']:.1f}")
+            print(f"  Mean (Avg. Best Cost): {stats['mean']:.2f}")
+            print(f"  Std. Deviation (Cost): {stats['std']:.2f}")
+            print(f"  Avg. Run Time (sec):   {stats['time']:.3f}")
+            print(f"  Best Cost (Overall):   {stats['best']:.2f}")
+        
         print("="*70)
         
         # Determine winner based on mean performance
@@ -1040,13 +1246,17 @@ def main():
         save_experiment_summary(experiment_timestamp, all_stats)
         
         if OPTIMIZATION_ALGORITHM == 'EXPERIMENT':
-            save_experiment_raw_data(experiment_timestamp, sa_results, ga_results, sa_evals_list, ga_evals_list, aco_results, aco_evals_list)
+            save_experiment_raw_data(experiment_timestamp, sa_results, ga_results, sa_evals_list, ga_evals_list, aco_results, aco_evals_list, pso_results, pso_evals_list, hybrid_results, hybrid_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'SA_ANALYSIS':
             save_experiment_raw_data(experiment_timestamp, sa_results=sa_results, sa_evals=sa_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'GA_ANALYSIS':
             save_experiment_raw_data(experiment_timestamp, ga_results=ga_results, ga_evals=ga_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'ACO_ANALYSIS':
             save_experiment_raw_data(experiment_timestamp, aco_results=aco_results, aco_evals=aco_evals_list)
+        elif OPTIMIZATION_ALGORITHM == 'PSO_ANALYSIS':
+            save_experiment_raw_data(experiment_timestamp, pso_results=pso_results, pso_evals=pso_evals_list)
+        elif OPTIMIZATION_ALGORITHM == 'HYBRID_ANALYSIS':
+            save_experiment_raw_data(experiment_timestamp, hybrid_results=hybrid_results, hybrid_evals=hybrid_evals_list)
         # --- END FIX ---
         
         # 8. Show All Plots
@@ -1067,10 +1277,10 @@ def main():
                 results_list.append(ga_results)
                 labels_list.append('GA')
                 colors_list.append('red')
-            if aco_results:
-                results_list.append(aco_results)
-                labels_list.append('ACO')
-                colors_list.append('green')
+            if hybrid_results:
+                results_list.append(hybrid_results)
+                labels_list.append('HYBRID')
+                colors_list.append('orange')
             
             if results_list:
                 plot_experiment_results(results_list, labels_list)
@@ -1084,21 +1294,21 @@ def main():
                 print("  Displaying performance dashboard for the BEST GA run...")
                 plot_ga_performance_dashboard(ga_best_history_overall)
             
-            if aco_results and aco_best_history_overall:
-                print("  Displaying performance dashboard for the BEST ACO run...")
-                plot_aco_performance_dashboard(aco_best_history_overall)
+            if hybrid_results and hybrid_best_history_overall:
+                print("  Displaying performance dashboard for the BEST HYBRID run...")
+                plot_sequential_hybrid_dashboard(hybrid_best_history_overall, hybrid_best_aco_iters, hybrid_best_pso_iters)
             
             # Plotting overlay comparison for best runs
             try:
-                if sa_results and ga_results and aco_results:
-                    print("Generating overlay comparison (SA vs GA vs ACO - Best Runs)...")
+                if sa_results and ga_results and hybrid_results:
+                    print("Generating overlay comparison (SA vs GA vs HYBRID - Best Runs)...")
                     best_sa_evals = sa_evals_list[np.argmin(sa_results)]
                     best_ga_evals = ga_evals_list[np.argmin(ga_results)]
-                    best_aco_evals = aco_evals_list[np.argmin(aco_results)]
+                    best_hybrid_evals = hybrid_evals_list[np.argmin(hybrid_results)]
                     plot_compare(sa_best_history_overall, ga_best_history_overall, 
-                                labels=('SA (Best)', 'GA (Best)', 'ACO (Best)'), 
+                                labels=('SA (Best)', 'GA (Best)', 'HYBRID (Best)'), 
                                 sa_evals=best_sa_evals, ga_evals=best_ga_evals,
-                                history_aco=aco_best_history_overall, aco_evals=best_aco_evals)
+                                history_hybrid=hybrid_best_history_overall, hybrid_evals=best_hybrid_evals)
                 elif sa_results and ga_results:
                     print("Generating overlay comparison (SA vs GA - Best Runs)...")
                     best_sa_evals = sa_evals_list[np.argmin(sa_results)]
@@ -1126,6 +1336,12 @@ def main():
             plot_experiment_distribution([aco_results], ['ACO'], ['green'])
             print("  Displaying performance dashboard for the BEST ACO run...")
             plot_aco_performance_dashboard(aco_best_history_overall)
+        
+        elif OPTIMIZATION_ALGORITHM == 'PSO_ANALYSIS':
+            plot_experiment_results([pso_results], ['PSO'])
+            plot_experiment_distribution([pso_results], ['PSO'], ['purple'])
+            print("  Displaying performance dashboard for the BEST PSO run...")
+            plot_pso_performance_dashboard(pso_best_history_overall)
         
         print("  (All plots displayed)")
 
