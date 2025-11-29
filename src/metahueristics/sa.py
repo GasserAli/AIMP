@@ -252,7 +252,7 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
         print("Initializing geometry and parameters...")
         
     geom_for_validation = Geometry()
-    all_vehicles = config.pi
+    all_vehicles = copy.deepcopy(config.pi)
     geom_for_validation.create_entry_queue(all_vehicles)
     for v in all_vehicles:
         geom_for_validation.set_trajectory(v)

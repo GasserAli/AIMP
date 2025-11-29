@@ -15,7 +15,7 @@ inter_conflict_distance = 5  # Distance between conflict points (in meters)
 # --- Constraint Allowance ---
 speed_penalty_coeff = 0.0   # penalize solutions with speeds far from v_max
 # conflict_weight = 0.0  # penalize conflicts in objective function
-follow_slack= 0.2  # Additional slack time for following vehicles (in seconds), this allows more flexibilty for constraint C0
+follow_slack= 0.02  # Additional slack time for following vehicles (in seconds), this allows more flexibilty for constraint C0
 
 
 pi = [

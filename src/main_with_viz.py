@@ -97,6 +97,14 @@ except ImportError as e:
     print("  'GA', 'BOTH', 'GA_ANALYSIS', and 'EXPERIMENT' modes will not be available.")
     GA_IMPORTED = False
 
+try:
+    from metahueristics.aco import run_aco, plot_aco_performance_dashboard, create_initial_population as aco_create_initial_population
+    ACO_IMPORTED = True
+except ImportError as e:
+    print(f"WARNING: Could not import aco.py: {e}")
+    print("  'ACO', 'ACO_ANALYSIS', and ACO comparison modes will not be available.")
+    ACO_IMPORTED = False
+
 
 # =============================================================================
 # CONFIGURATION
@@ -104,11 +112,13 @@ except ImportError as e:
 # --- 1. CHOOSE ALGORITHM ---
 # 'SA':          Single run of SA (uses sa.MAX_TOTAL_ITERATIONS).
 # 'GA':          Single run of GA (uses ga.NUM_GENERATIONS).
+# 'ACO':         Single run of ACO (uses aco.NUM_ITERATIONS).
 # 'SA_ANALYSIS': N-run statistical analysis of SA (natural stop).
 # 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
+# 'ACO_ANALYSIS': N-run statistical analysis of ACO (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
-# 'EXPERIMENT':  N-run statistical comparison of SA vs. GA (natural stops).
-OPTIMIZATION_ALGORITHM = 'GA'  # 'SA', 'GA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'BOTH', 'EXPERIMENT'
+# 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. ACO (natural stops).
+OPTIMIZATION_ALGORITHM = 'EXPERIMENT'  # 'SA', 'GA', 'ACO', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'BOTH', 'EXPERIMENT'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -142,13 +152,30 @@ else:
     TOURNAMENT_SIZE = 3
     MUTATION_RATE_PERM = 0.1
     MUTATION_RATE_SPEED = 0.1
+
+# ACO Parameters (used for 'ACO' and 'ACO_ANALYSIS')
+if ACO_IMPORTED:
+    from metahueristics.aco import (
+        NUM_ANTS, NUM_ITERATIONS, ALPHA, RHO, Q, 
+        TAU_INITIAL, ELITIST_WEIGHT, CONVERGENCE_PATIENCE as ACO_CONVERGENCE_PATIENCE
+    )
+else:
+    # Default values if ACO not imported, to prevent errors
+    NUM_ANTS = 50
+    NUM_ITERATIONS = 100
+    ALPHA = 1.0
+    RHO = 0.3
+    Q = 100.0
+    TAU_INITIAL = 0.1
+    ELITIST_WEIGHT = 2.0
+    ACO_CONVERGENCE_PATIENCE = 20
 # =============================================================================
 
 
 # --- Conditional Imports Based on Visualization Method ---
 animation_enabled = False
 web_viz_enabled = False
-is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS')
+is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS')
 
 if not is_analysis_mode and VISUALIZATION_METHOD == 'matplotlib':
     try:
@@ -233,10 +260,10 @@ def plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals):
     plt.tight_layout()
     plt.show()
 
-def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_evals=None):
-    """Overlay SA and GA histories on a single 2x2 comparison grid.
+def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_evals=None, history_aco=None, aco_evals=None):
+    """Overlay SA, GA, and optionally ACO histories on a single 2x2 comparison grid.
 
-    Accepts history dicts produced by `run_sa` and `run_ga` (formats used in this project).
+    Accepts history dicts produced by `run_sa`, `run_ga`, and `run_aco` (formats used in this project).
     The function will look for common keys and plot matching series; missing series are skipped.
     """
     def first(h, options):
@@ -290,6 +317,17 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
     emergency_delays_sa = first(history_sa, ['emergency_delays', 'emergency_delays'])
     emergency_delays_ga = first(history_ga, ['best_fem', 'emergency_delays'])
 
+    # ACO data extraction
+    costs_aco = []
+    avg_delays_aco = []
+    total_delays_aco = []
+    emergency_delays_aco = []
+    if history_aco:
+        costs_aco = first(history_aco, ['best_f', 'costs', 'best'])
+        avg_delays_aco = first(history_aco, ['best_avg_delay', 'avg_delays'])
+        total_delays_aco = first(history_aco, ['best_fall', 'total_delays'])
+        emergency_delays_aco = first(history_aco, ['best_fem', 'emergency_delays'])
+
     # Prepare x-axis mapping to NUMBER OF FITNESS EVALUATIONS
     # GA: history entries are per-generation. Map generation index to cumulative evaluation counts.
     # Determine number of GA generations present in any series
@@ -332,8 +370,43 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
     x_total_delays_ga, total_delays_ga = ga_align_and_clip(total_delays_ga, ga_eval_points)
     x_emergency_delays_ga, emergency_delays_ga = ga_align_and_clip(emergency_delays_ga, ga_eval_points)
     
+    # ACO x arrays and clipped series (ACO uses iteration-based evaluation)
+    x_costs_aco = np.array([])
+    x_avg_delays_aco = np.array([])
+    x_total_delays_aco = np.array([])
+    x_emergency_delays_aco = np.array([])
+    if history_aco and costs_aco:
+        # ACO iterations map to evaluations: each iteration evaluates NUM_ANTS solutions
+        aco_len = len(costs_aco)
+        if ACO_IMPORTED:
+            aco_evals_per_iter = NUM_ANTS
+        else:
+            aco_evals_per_iter = 50  # Default
+        aco_eval_points = [aco_evals_per_iter * (i + 1) for i in range(aco_len)]
+        
+        # Clip to budget if provided
+        if aco_evals is not None and aco_eval_points:
+            clip_idx = np.searchsorted(aco_eval_points, aco_evals, side='right')
+            aco_eval_points = aco_eval_points[:clip_idx]
+            costs_aco = costs_aco[:clip_idx]
+            avg_delays_aco = avg_delays_aco[:clip_idx] if avg_delays_aco else []
+            total_delays_aco = total_delays_aco[:clip_idx] if total_delays_aco else []
+            emergency_delays_aco = emergency_delays_aco[:clip_idx] if emergency_delays_aco else []
+        
+        x_costs_aco = np.array(aco_eval_points)
+        x_avg_delays_aco = np.array(aco_eval_points[:len(avg_delays_aco)])
+        x_total_delays_aco = np.array(aco_eval_points[:len(total_delays_aco)])
+        x_emergency_delays_aco = np.array(aco_eval_points[:len(emergency_delays_aco)])
+    
+    # Determine title based on what algorithms are present
+    title_parts = []
+    if history_sa: title_parts.append(labels[0] if len(labels) > 0 else 'SA')
+    if history_ga: title_parts.append(labels[1] if len(labels) > 1 else 'GA')
+    if history_aco: title_parts.append(labels[2] if len(labels) > 2 else 'ACO')
+    title = f"Overlay: {' vs '.join(title_parts)}"
+    
     fig, axs = plt.subplots(2, 2, figsize=(13, 9))
-    fig.suptitle(f"Overlay: {labels[0]} vs {labels[1]}")
+    fig.suptitle(title)
 
     # Top-left: Cost (mapped to fitness evaluation counts)
     ax = axs[0, 0]
@@ -341,6 +414,9 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         ax.plot(x_costs_sa, costs_sa, label=f"{labels[0]} best", color='tab:blue')
     if x_costs_ga.size:
         ax.plot(x_costs_ga, costs_ga, label=f"{labels[1]} best", color='tab:orange')
+    if x_costs_aco.size:
+        aco_label = labels[2] if len(labels) > 2 else 'ACO'
+        ax.plot(x_costs_aco, costs_aco, label=f"{aco_label} best", color='tab:green')
     if x_avg_sa.size:
         ax.plot(x_avg_sa, avg_sa, label=f"{labels[0]} avg", color='tab:cyan', linestyle=':')
     if x_avg_ga.size:
@@ -357,6 +433,9 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         ax.plot(x_avg_delays_sa, avg_delays_sa, label=f"{labels[0]}", color='tab:green')
     if x_avg_delays_ga.size:
         ax.plot(x_avg_delays_ga, avg_delays_ga, label=f"{labels[1]}", color='tab:red')
+    if x_avg_delays_aco.size and len(avg_delays_aco) > 0:
+        aco_label = labels[2] if len(labels) > 2 else 'ACO'
+        ax.plot(x_avg_delays_aco, avg_delays_aco, label=f"{aco_label}", color='tab:purple')
     ax.set_title('Average Delay per Vehicle')
     ax.set_xlabel('Number of Fitness Evaluations')
     ax.set_ylabel('Avg Delay (s)')
@@ -369,6 +448,9 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         ax.plot(x_total_delays_sa, total_delays_sa, label=f"{labels[0]}", color='tab:cyan')
     if x_total_delays_ga.size:
         ax.plot(x_total_delays_ga, total_delays_ga, label=f"{labels[1]}", color='tab:olive')
+    if x_total_delays_aco.size and len(total_delays_aco) > 0:
+        aco_label = labels[2] if len(labels) > 2 else 'ACO'
+        ax.plot(x_total_delays_aco, total_delays_aco, label=f"{aco_label}", color='tab:brown')
     ax.set_title('Total Delay (f_all)')
     ax.set_xlabel('Number of Fitness Evaluations')
     ax.set_ylabel('Total Delay (s)')
@@ -381,6 +463,9 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         ax.plot(x_emergency_delays_sa, emergency_delays_sa, label=f"{labels[0]}", color='tab:blue')
     if x_emergency_delays_ga.size:
         ax.plot(x_emergency_delays_ga, emergency_delays_ga, label=f"{labels[1]}", color='tab:orange')
+    if x_emergency_delays_aco.size and len(emergency_delays_aco) > 0:
+        aco_label = labels[2] if len(labels) > 2 else 'ACO'
+        ax.plot(x_emergency_delays_aco, emergency_delays_aco, label=f"{aco_label}", color='tab:pink')
     ax.set_title('Emergency Delay (f_em)')
     ax.set_xlabel('Number of Fitness Evaluations')
     ax.set_ylabel('Emergency Delay (s)')
@@ -596,7 +681,7 @@ def save_experiment_summary(timestamp, all_stats):
         print(f"  ERROR: Could not save summary CSV. {e}")
 
 
-def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_evals=None, ga_evals=None):
+def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_evals=None, ga_evals=None, aco_results=None, aco_evals=None):
     """
     Saves the raw final cost AND evals from every single run to a SINGLE master CSV file.
     Appends the new runs; creates header if file doesn't exist.
@@ -606,21 +691,24 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_eva
         with open(RAW_FILENAME, mode='a', newline='') as f:
             writer = csv.writer(f)
             if not file_exists:
-                # --- MODIFIED: Added evals columns ---
-                writer.writerow(['Experiment_Timestamp', 'Run', 'SA_Final_Cost', 'SA_Evals', 'GA_Final_Cost', 'GA_Evals'])
+                # --- MODIFIED: Added ACO columns ---
+                writer.writerow(['Experiment_Timestamp', 'Run', 'SA_Final_Cost', 'SA_Evals', 'GA_Final_Cost', 'GA_Evals', 'ACO_Final_Cost', 'ACO_Evals'])
             
             # Determine max number of runs
             num_runs = 0
             if sa_results: num_runs = len(sa_results)
             if ga_results: num_runs = max(num_runs, len(ga_results))
+            if aco_results: num_runs = max(num_runs, len(aco_results))
             
             for i in range(num_runs):
                 sa_val = sa_results[i] if sa_results and i < len(sa_results) else 'N/A'
                 sa_ev = sa_evals[i] if sa_evals and i < len(sa_evals) else 'N/A'
                 ga_val = ga_results[i] if ga_results and i < len(ga_results) else 'N/A'
                 ga_ev = ga_evals[i] if ga_evals and i < len(ga_evals) else 'N/A'
-                # --- MODIFIED: Write all data points ---
-                writer.writerow([timestamp, i+1, sa_val, sa_ev, ga_val, ga_ev])
+                aco_val = aco_results[i] if aco_results and i < len(aco_results) else 'N/A'
+                aco_ev = aco_evals[i] if aco_evals and i < len(aco_evals) else 'N/A'
+                # --- MODIFIED: Write all data points including ACO ---
+                writer.writerow([timestamp, i+1, sa_val, sa_ev, ga_val, ga_ev, aco_val, aco_ev])
                     
         print(f"  Successfully appended raw data to: {RAW_FILENAME}")
     except IOError as e:
@@ -642,7 +730,7 @@ def main():
     print("="*70)
     print(f"Selected Algorithm:   {OPTIMIZATION_ALGORITHM.upper()}")
     print(f"Visualization Method: {VISUALIZATION_METHOD.upper()}")
-    if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS'):
+    if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS'):
         print(f"Experiment Runs:      {NUM_EXPERIMENT_RUNS}")
     print("="*70 + "\n")
     
@@ -677,6 +765,28 @@ def main():
         
         print("\nDisplaying GA performance plots...")
         plot_ga_performance_dashboard(ga_history)
+        
+        print("  (Close all plot windows to continue to animation)")
+        if animation_enabled:
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+        elif web_viz_enabled:
+            visualize_web(perm_best, speeds_best)
+
+    # --- Run ACO (Single Run) ---
+    elif OPTIMIZATION_ALGORITHM == 'ACO':
+        if not ACO_IMPORTED:
+            print("ERROR: ACO algorithm selected but aco.py could not be imported.")
+            return
+            
+        (perm_best, speeds_best, obj_best, aco_history, geom, 
+         tau_p_dict, best_aco_obj_dict, evals) = run_aco(
+            max_iterations=None, # <-- This tells ACO to use NUM_ITERATIONS or converge
+            visualize_realtime=True,
+            verbose=True
+        )
+        
+        print("\nDisplaying ACO performance plots...")
+        plot_aco_performance_dashboard(aco_history)
         
         print("  (Close all plot windows to continue to animation)")
         if animation_enabled:
@@ -726,11 +836,7 @@ def main():
             traceback.print_exc()
 
     # --- MODIFICATION: Split Experiment logic for "Natural Run" ---
-    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS'):
-        if not GA_IMPORTED:
-            print("ERROR: 'GA' dependent modes selected but ga.py could not be imported.")
-            return
-            
+    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS'):
         print("\n--- PREPARING EXPERIMENT (NATURAL RUN) ---")
         print(f"Running {NUM_EXPERIMENT_RUNS} times for selected algorithm(s).")
         
@@ -747,13 +853,17 @@ def main():
 
         sa_results = []
         ga_results = []
-        sa_evals_list = [] # <-- MODIFIED: Track evals per run
-        ga_evals_list = [] # <-- MODIFIED: Track evals per run
+        aco_results = []
+        sa_evals_list = []
+        ga_evals_list = []
+        aco_evals_list = []
         
         sa_best_obj_overall = math.inf
         sa_best_history_overall = {}
         ga_best_obj_overall = math.inf
         ga_best_history_overall = {}
+        aco_best_obj_overall = math.inf
+        aco_best_history_overall = {}
         all_stats = {}
         
         # --- FIX: Defined experiment_timestamp here ---
@@ -800,44 +910,86 @@ def main():
 
         # 4. Run GA Experiment
         if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'GA_ANALYSIS'):
-            print("\nGenerating common initial population for GA...")
-            common_ga_population = create_initial_population(POPULATION_SIZE, geom)
-            
-            # --- MODIFICATION: Use default generations for NATURAL run ---
-            # 'None' tells ga.py to use NUM_GENERATIONS or CONVERGENCE_PATIENCE
-            ga_eval_limit = None 
-            print(f"GA using NATURAL STOP (Num_Gens={NUM_GENERATIONS} or Convergence)")
-            # ---
+            if not GA_IMPORTED:
+                print("WARNING: GA selected for experiment but ga.py could not be imported. Skipping GA.")
+            else:
+                print("\nGenerating common initial population for GA...")
+                common_ga_population = create_initial_population(POPULATION_SIZE, geom)
+                
+                # --- MODIFICATION: Use default generations for NATURAL run ---
+                # 'None' tells ga.py to use NUM_GENERATIONS or CONVERGENCE_PATIENCE
+                ga_eval_limit = None 
+                print(f"GA using NATURAL STOP (Num_Gens={NUM_GENERATIONS} or Convergence)")
+                # ---
 
-            print("\n" + "="*70)
-            print(f"RUNNING GA EXPERIMENT ({NUM_EXPERIMENT_RUNS} runs)...")
-            print("="*70)
-            start_time_ga = time.time()
-            for i in range(NUM_EXPERIMENT_RUNS):
-                print(f"  GA Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
-                _, _, ga_obj, ga_history, _, _, _, ga_evals = run_ga(
-                    max_evaluations=ga_eval_limit, # <-- This is None
-                    initial_population=common_ga_population,
-                    verbose=False,
-                    visualize_realtime=False 
-                )
-                print(f"    ...Run {i+1} Best: {ga_obj:.2f} (in {ga_evals} evals)")
-                ga_results.append(ga_obj)
-                ga_evals_list.append(ga_evals) # <-- MODIFIED
-                if ga_obj < ga_best_obj_overall:
-                    ga_best_obj_overall = ga_obj
-                    ga_best_history_overall = ga_history
-            end_time_ga = time.time()
-            
-            all_stats['GA'] = {
-                'mean': np.mean(ga_results),
-                'std': np.std(ga_results),
-                'time': (end_time_ga - start_time_ga) / NUM_EXPERIMENT_RUNS,
-                'best': ga_best_obj_overall,
-                'avg_evals': np.mean(ga_evals_list) # <-- MODIFIED
-            }
+                print("\n" + "="*70)
+                print(f"RUNNING GA EXPERIMENT ({NUM_EXPERIMENT_RUNS} runs)...")
+                print("="*70)
+                start_time_ga = time.time()
+                for i in range(NUM_EXPERIMENT_RUNS):
+                    print(f"  GA Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
+                    _, _, ga_obj, ga_history, _, _, _, ga_evals = run_ga(
+                        max_evaluations=ga_eval_limit, # <-- This is None
+                        initial_population=common_ga_population,
+                        verbose=False,
+                        visualize_realtime=False 
+                    )
+                    print(f"    ...Run {i+1} Best: {ga_obj:.2f} (in {ga_evals} evals)")
+                    ga_results.append(ga_obj)
+                    ga_evals_list.append(ga_evals)
+                    if ga_obj < ga_best_obj_overall:
+                        ga_best_obj_overall = ga_obj
+                        ga_best_history_overall = ga_history
+                end_time_ga = time.time()
+                
+                all_stats['GA'] = {
+                    'mean': np.mean(ga_results),
+                    'std': np.std(ga_results),
+                    'time': (end_time_ga - start_time_ga) / NUM_EXPERIMENT_RUNS,
+                    'best': ga_best_obj_overall,
+                    'avg_evals': np.mean(ga_evals_list)
+                }
+
+        # 5. Run ACO Experiment
+        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'ACO_ANALYSIS'):
+            if not ACO_IMPORTED:
+                print("WARNING: ACO selected for experiment but aco.py could not be imported. Skipping ACO.")
+            else:
+                print("\nGenerating common initial ant colony for ACO...")
+                common_aco_population = aco_create_initial_population(NUM_ANTS, geom)
+                
+                aco_iter_limit = None
+                print(f"ACO using NATURAL STOP (Num_Iters={NUM_ITERATIONS} or Convergence)")
+
+                print("\n" + "="*70)
+                print(f"RUNNING ACO EXPERIMENT ({NUM_EXPERIMENT_RUNS} runs)...")
+                print("="*70)
+                start_time_aco = time.time()
+                for i in range(NUM_EXPERIMENT_RUNS):
+                    print(f"  ACO Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
+                    (aco_perm, aco_speeds, aco_obj, aco_history, 
+                     aco_geom, aco_tau, aco_obj_dict, aco_evals) = run_aco(
+                        max_iterations=aco_iter_limit,
+                        visualize_realtime=False,
+                        verbose=False
+                    )
+                    print(f"    ...Run {i+1} Best: {aco_obj:.2f} (in {aco_evals} evals)")
+                    aco_results.append(aco_obj)
+                    aco_evals_list.append(aco_evals)
+                    if aco_obj < aco_best_obj_overall:
+                        aco_best_obj_overall = aco_obj
+                        aco_best_history_overall = aco_history
+                end_time_aco = time.time()
+                
+                all_stats['ACO'] = {
+                    'mean': np.mean(aco_results),
+                    'std': np.std(aco_results),
+                    'time': (end_time_aco - start_time_aco) / NUM_EXPERIMENT_RUNS,
+                    'best': aco_best_obj_overall,
+                    'avg_evals': np.mean(aco_evals_list)
+                }
         
-        # 5. Calculate and Print Statistics
+        # 6. Calculate and Print Statistics
         print("\n" + "="*70)
         print("EXPERIMENT STATISTICAL RESULTS")
         print(f"(Based on {NUM_EXPERIMENT_RUNS} runs each with same initial state)")
@@ -861,19 +1013,26 @@ def main():
             print(f"  Avg. Run Time (sec):   {stats['time']:.3f}")
             print(f"  Best Cost (Overall):   {stats['best']:.2f}")
         
+        if 'ACO' in all_stats:
+            stats = all_stats['ACO']
+            print("--- Ant Colony Optimization (ACO) ---")
+            print(f"  Avg. Evals Used:     {stats['avg_evals']:.1f}")
+            print(f"  Mean (Avg. Best Cost): {stats['mean']:.2f}")
+            print(f"  Std. Deviation (Cost): {stats['std']:.2f}")
+            print(f"  Avg. Run Time (sec):   {stats['time']:.3f}")
+            print(f"  Best Cost (Overall):   {stats['best']:.2f}")
+        
         print("="*70)
         
-        if 'SA' in all_stats and 'GA' in all_stats:
-            if all_stats['GA']['mean'] < all_stats['SA']['mean']:
-                print("\n  GA achieved a better (lower) average final cost.")
-            else:
-                print("\n  SA achieved a better (lower) average final cost.")
-            if all_stats['GA']['std'] < all_stats['SA']['std']:
-                print("  GA was more consistent (lower standard deviation).")
-            else:
-                print("  SA was more consistent (lower standard deviation).")
+        # Determine winner based on mean performance
+        if len(all_stats) >= 2:
+            best_algo = min(all_stats.items(), key=lambda x: x[1]['mean'])[0]
+            print(f"\n  {best_algo} achieved the best (lowest) average final cost.")
+            
+            most_consistent = min(all_stats.items(), key=lambda x: x[1]['std'])[0]
+            print(f"  {most_consistent} was the most consistent (lowest standard deviation).")
         
-        # 6. Save results to CSVs
+        # 7. Save results to CSVs
         print("\n" + "="*70)
         print("SAVING EXPERIMENT RESULTS...")
         
@@ -881,34 +1040,71 @@ def main():
         save_experiment_summary(experiment_timestamp, all_stats)
         
         if OPTIMIZATION_ALGORITHM == 'EXPERIMENT':
-            save_experiment_raw_data(experiment_timestamp, sa_results, ga_results, sa_evals_list, ga_evals_list)
+            save_experiment_raw_data(experiment_timestamp, sa_results, ga_results, sa_evals_list, ga_evals_list, aco_results, aco_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'SA_ANALYSIS':
             save_experiment_raw_data(experiment_timestamp, sa_results=sa_results, sa_evals=sa_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'GA_ANALYSIS':
             save_experiment_raw_data(experiment_timestamp, ga_results=ga_results, ga_evals=ga_evals_list)
+        elif OPTIMIZATION_ALGORITHM == 'ACO_ANALYSIS':
+            save_experiment_raw_data(experiment_timestamp, aco_results=aco_results, aco_evals=aco_evals_list)
         # --- END FIX ---
         
-        # 7. Show All Plots
+        # 8. Show All Plots
         print("\n" + "="*70)
         print("GENERATING PLOTS (Close each plot to see the next)...")
         
         if OPTIMIZATION_ALGORITHM == 'EXPERIMENT':
-            plot_experiment_results([sa_results, ga_results], ['SA', 'GA'])
-            plot_experiment_distribution([sa_results, ga_results], ['SA', 'GA'], ['blue', 'red'])
-            print("  Displaying performance dashboard for the BEST SA run...")
-            plot_sa_results(sa_best_history_overall)
-            print("  Displaying performance dashboard for the BEST GA run...")
-            plot_ga_performance_dashboard(ga_best_history_overall)
+            # Determine which algorithms were run
+            results_list = []
+            labels_list = []
+            colors_list = []
             
-            # Plotting the overlay plot is now more complex, as the x-axes (evals)
-            # are different for every run. We plot the "best" run for each.
+            if sa_results:
+                results_list.append(sa_results)
+                labels_list.append('SA')
+                colors_list.append('blue')
+            if ga_results:
+                results_list.append(ga_results)
+                labels_list.append('GA')
+                colors_list.append('red')
+            if aco_results:
+                results_list.append(aco_results)
+                labels_list.append('ACO')
+                colors_list.append('green')
+            
+            if results_list:
+                plot_experiment_results(results_list, labels_list)
+                plot_experiment_distribution(results_list, labels_list, colors_list)
+            
+            if sa_results and sa_best_history_overall:
+                print("  Displaying performance dashboard for the BEST SA run...")
+                plot_sa_results(sa_best_history_overall)
+            
+            if ga_results and ga_best_history_overall:
+                print("  Displaying performance dashboard for the BEST GA run...")
+                plot_ga_performance_dashboard(ga_best_history_overall)
+            
+            if aco_results and aco_best_history_overall:
+                print("  Displaying performance dashboard for the BEST ACO run...")
+                plot_aco_performance_dashboard(aco_best_history_overall)
+            
+            # Plotting overlay comparison for best runs
             try:
-                print("Generating overlay comparison (SA vs GA - Best Runs)...")
-                # We need to find the evals for the *best* run, not the avg
-                best_sa_evals = sa_evals_list[np.argmin(sa_results)]
-                best_ga_evals = ga_evals_list[np.argmin(ga_results)]
-                plot_compare(sa_best_history_overall, ga_best_history_overall, labels=('SA (Best)', 'GA (Best)'), 
-                             sa_evals=best_sa_evals, ga_evals=best_ga_evals)
+                if sa_results and ga_results and aco_results:
+                    print("Generating overlay comparison (SA vs GA vs ACO - Best Runs)...")
+                    best_sa_evals = sa_evals_list[np.argmin(sa_results)]
+                    best_ga_evals = ga_evals_list[np.argmin(ga_results)]
+                    best_aco_evals = aco_evals_list[np.argmin(aco_results)]
+                    plot_compare(sa_best_history_overall, ga_best_history_overall, 
+                                labels=('SA (Best)', 'GA (Best)', 'ACO (Best)'), 
+                                sa_evals=best_sa_evals, ga_evals=best_ga_evals,
+                                history_aco=aco_best_history_overall, aco_evals=best_aco_evals)
+                elif sa_results and ga_results:
+                    print("Generating overlay comparison (SA vs GA - Best Runs)...")
+                    best_sa_evals = sa_evals_list[np.argmin(sa_results)]
+                    best_ga_evals = ga_evals_list[np.argmin(ga_results)]
+                    plot_compare(sa_best_history_overall, ga_best_history_overall, labels=('SA (Best)', 'GA (Best)'), 
+                                 sa_evals=best_sa_evals, ga_evals=best_ga_evals)
             except Exception as e:
                 print(f"Could not generate overlay comparison plot: {e}")
                 traceback.print_exc()
@@ -924,6 +1120,12 @@ def main():
             plot_experiment_distribution([ga_results], ['GA'], ['red'])
             print("  Displaying performance dashboard for the BEST GA run...")
             plot_ga_performance_dashboard(ga_best_history_overall)
+        
+        elif OPTIMIZATION_ALGORITHM == 'ACO_ANALYSIS':
+            plot_experiment_results([aco_results], ['ACO'])
+            plot_experiment_distribution([aco_results], ['ACO'], ['green'])
+            print("  Displaying performance dashboard for the BEST ACO run...")
+            plot_aco_performance_dashboard(aco_best_history_overall)
         
         print("  (All plots displayed)")
 

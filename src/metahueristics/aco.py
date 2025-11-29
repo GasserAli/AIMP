@@ -22,21 +22,22 @@ from typing import List, Dict, Tuple
 import config
 from engine.geometry import Geometry
 from engine.vehicle import Vehicle
-from sa import evaluate_solution, validate_speeds
+from metahueristics.sa import evaluate_solution, validate_speeds
 
 # =============================================================================
 # ACO PARAMETERS (Ant System)
 # =============================================================================
-NUM_ANTS = 50                    # m: Number of ants per iteration
-NUM_ITERATIONS = 100             # Number of ACO iterations
-ALPHA = 1.0                      # α: Pheromone importance
-RHO = 0.3                        # ρ: Evaporation rate (0 < ρ < 1)
-Q = 100.0                        # Q: Pheromone deposit constant
-TAU_INITIAL = 0.1                # Initial pheromone level
-ELITIST_WEIGHT = 2.0             # Weight for best-so-far solution (elitist AS)
+NUM_ANTS = 100                    # m: Number of ants per iteration (10-100)
+NUM_ITERATIONS = 400             # Number of ACO iterations (50-500)
+ALPHA = 1.0                      # α: Pheromone importance (0.5-2.0, higher = more exploitation)
+BETA = 2.0                       # β: Heuristic importance (1.0-5.0, higher = more greedy)
+RHO = 0.2                        # ρ: Evaporation rate (0.1-0.5, higher = more exploration)
+Q = 500.0                        # Q: Pheromone deposit constant (1.0-1000.0)
+TAU_INITIAL = 0.1                # Initial pheromone level (0.01-1.0)
+ELITIST_WEIGHT = 1.0             # Weight for best-so-far solution (1.0-5.0)
 
 # Early stopping
-CONVERGENCE_PATIENCE = 20        # Stop if no improvement for this many iterations
+CONVERGENCE_PATIENCE = 30        # Stop if no improvement for this many iterations
 
 # =============================================================================
 # ACO VISUALIZER CLASS
@@ -195,20 +196,19 @@ class ACOGraph:
 # SOLUTION CONSTRUCTION
 # =============================================================================
 def construct_ant_solution(ant: Ant, graph: ACOGraph, geom: Geometry, 
-                          alpha: float, tau_p_dict: Dict) -> None:
+                          alpha: float, beta: float, tau_p_dict: Dict) -> None:
     """
     Constructs a complete solution for one ant using probabilistic selection.
     
-    The ant builds a permutation by selecting vehicles sequentially based on:
-    - Pheromone levels (τ)
-    - Heuristic information (η)
+    The ant builds a PERMUTATION ONLY (not speeds) by selecting vehicles based on:
+    - Pheromone levels (τ) - learned from previous good solutions
+    - Heuristic information (η) - domain knowledge (emergency priority)
     
     Selection probability: p_ij = (τ_ij^α * η_ij^β) / Σ(τ_il^α * η_il^β)
+    where α controls pheromone influence, β controls heuristic influence
     """
     ant.reset()
     available_vehicles = list(graph.vehicles)
-    
-    v_min_global, v_max_global = config.velocity_range
     
     # Build permutation position by position
     for position in range(graph.n):
@@ -218,10 +218,16 @@ def construct_ant_solution(ant: Ant, graph: ACOGraph, geom: Geometry,
         for vehicle in available_vehicles:
             v_idx = graph.vehicle_ids.index(vehicle.id)
             
-            # Pheromone factor
+            # Pheromone factor (τ^α)
             tau_val = graph.tau[position][v_idx]
-            # Combined attractiveness
-            attractiveness = (tau_val ** alpha) 
+            pheromone_factor = tau_val ** alpha if alpha > 0 else 1.0
+            
+            # Heuristic factor (η^β)
+            eta_val = graph.eta[position][v_idx]
+            heuristic_factor = eta_val ** beta if beta > 0 else 1.0
+            
+            # Combined attractiveness: τ^α * η^β
+            attractiveness = pheromone_factor * heuristic_factor
             probs.append(attractiveness)
         
         # Normalize to probabilities
@@ -239,8 +245,11 @@ def construct_ant_solution(ant: Ant, graph: ACOGraph, geom: Geometry,
         ant.visited.add(selected_vehicle.id)
         available_vehicles.remove(selected_vehicle)
     
-    # Generate speeds respecting C0 constraint (using SA's approach)
-    ant.speeds = _generate_speeds_for_permutation(ant.permutation, geom)
+    # IMPORTANT: ACO only optimizes PERMUTATION, not speeds!
+    # Assign speeds deterministically using a greedy heuristic:
+    # - Emergency vehicles get max speed
+    # - Others get speed based on their position (earlier = faster)
+    ant.speeds = _assign_speeds_deterministic(ant.permutation, geom)
     
     # Validate and evaluate
     ant.speeds = validate_speeds(ant.permutation, ant.speeds, geom)
@@ -248,10 +257,16 @@ def construct_ant_solution(ant: Ant, graph: ACOGraph, geom: Geometry,
     ant.fitness = obj_dict['f']
 
 
-def _generate_speeds_for_permutation(permutation: List[Vehicle], geom: Geometry) -> List[float]:
+def _assign_speeds_deterministic(permutation: List[Vehicle], geom: Geometry) -> List[float]:
     """
-    Generate speed assignments respecting the C0 (no-catch-up) constraint.
-    Similar to SA's initial solution generation.
+    Assign speeds DETERMINISTICALLY based on vehicle priority and position.
+    ACO optimizes PERMUTATION only, speeds are assigned using a greedy heuristic.
+    
+    Strategy:
+    1. Emergency vehicles get maximum speed
+    2. Normal vehicles get speed inversely proportional to their position
+       (earlier in permutation = higher speed)
+    3. Must respect C0 constraint (no overtaking in same queue)
     """
     speeds_dict = {}
     v_min_global, v_max_global = config.velocity_range
@@ -260,40 +275,40 @@ def _generate_speeds_for_permutation(permutation: List[Vehicle], geom: Geometry)
         if not queue:
             continue
         
-        # Find leader in this queue
-        leader_in_queue = None
-        for v in queue:
-            if v.id in [p.id for p in permutation]:
-                leader_in_queue = v
-                break
+        # Find all vehicles from this queue in the permutation
+        queue_vehicles_in_perm = []
+        for v in permutation:
+            if v in queue:
+                queue_vehicles_in_perm.append(v)
         
-        if leader_in_queue is None:
+        if not queue_vehicles_in_perm:
             continue
         
-        # Assign random speed to leader
-        last_speed = random.uniform(v_min_global, v_max_global)
-        speeds_dict[leader_in_queue.id] = last_speed
-        
-        # Assign speeds to followers (must be ≤ leader's speed)
-        followers_in_queue = [v for v in queue 
-                             if v.id != leader_in_queue.id and v.id in [p.id for p in permutation]]
-        
-        for v_follower in followers_in_queue:
-            current_max = min(v_max_global, last_speed)
-            current_min = min(v_min_global, current_max)
-            if current_min > current_max:
-                current_min = current_max
-            
-            new_speed = random.uniform(current_min, current_max + 1e-9)
-            speeds_dict[v_follower.id] = new_speed
-            last_speed = new_speed
+        # Assign speeds to vehicles in this queue
+        # Leader (first in queue) gets highest speed, followers get progressively lower
+        for idx, vehicle in enumerate(queue_vehicles_in_perm):
+            if vehicle.priority_status:  # Emergency vehicle
+                # Give emergency vehicles maximum speed
+                speeds_dict[vehicle.id] = v_max_global
+            else:
+                # Normal vehicles: assign speed based on position in queue
+                # First vehicle gets max speed, last gets min speed
+                if len(queue_vehicles_in_perm) == 1:
+                    speeds_dict[vehicle.id] = v_max_global
+                else:
+                    # Linear interpolation from max to min
+                    ratio = idx / (len(queue_vehicles_in_perm) - 1)
+                    speed = v_max_global - ratio * (v_max_global - v_min_global)
+                    speeds_dict[vehicle.id] = speed
     
     # Build speed list matching permutation order
     speeds_list = []
     for v in permutation:
-        if v.id not in speeds_dict:
-            speeds_dict[v.id] = random.uniform(v_min_global, v_max_global)
-        speeds_list.append(speeds_dict[v.id])
+        if v.id in speeds_dict:
+            speeds_list.append(speeds_dict[v.id])
+        else:
+            # Fallback: if vehicle not in any queue, give medium speed
+            speeds_list.append((v_min_global + v_max_global) / 2)
     
     return speeds_list
 
@@ -422,9 +437,11 @@ def run_aco(max_iterations: int = None,
         print("="*70)
         print(f"  Number of Ants:        {NUM_ANTS}")
         print(f"  Max Iterations:        {max_iterations}")
-        print(f"   (pheromone weight):  {ALPHA}")
-        print(f"   (evaporation):       {RHO}")
-        print(f"  q (deposit constant):  {Q}")
+        print(f"  Alpha (pheromone):     {ALPHA}")
+        print(f"  Beta (heuristic):      {BETA}")
+        print(f"  Rho (evaporation):     {RHO}")
+        print(f"  Q (deposit constant):  {Q}")
+        print("  Optimization: PERMUTATION ONLY (speeds assigned deterministically)")
         print("="*70 + "\n")
     
     # Initialize geometry and vehicles
@@ -482,7 +499,7 @@ def run_aco(max_iterations: int = None,
         iter_best_ant = None
         
         for ant in ants:
-            construct_ant_solution(ant, graph, geom, ALPHA, tau_p_dict)
+            construct_ant_solution(ant, graph, geom, ALPHA, BETA, tau_p_dict)
             eval_count += 1
             
             # Track iteration best
@@ -630,6 +647,8 @@ def run_aco(max_iterations: int = None,
             print(f"  Total Delay:        {best_obj_dict['fall']:.2f}")
             print(f"  Avg Delay/Vehicle:  {best_obj_dict['fall']/len(all_vehicles):.2f}")
         print("="*70 + "\n")
+        print(f"best perm ids: {[v.id for v in best_perm]}")
+        print(f"best speeds: {[f'{s:.2f}' for s in best_speeds]}")
     
     return (best_perm, best_speeds, best_fitness, history, 
             geom, tau_p_dict, best_obj_dict, eval_count)
@@ -714,7 +733,7 @@ def create_initial_population(num_ants: int, geom: Geometry) -> List[Ant]:
     
     for i in range(num_ants):
         ant = Ant(i)
-        construct_ant_solution(ant, graph, geom, ALPHA, tau_p_dict)
+        construct_ant_solution(ant, graph, geom, ALPHA, BETA, tau_p_dict)
         ants.append(ant)
     
     return ants
