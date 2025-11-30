@@ -19,11 +19,11 @@ from metahueristics.sa import evaluate_solution, validate_speeds
 # GA PARAMETERS
 # =============================================================================
 POPULATION_SIZE = 150
-NUM_GENERATIONS = 300
+NUM_GENERATIONS = 150
 ELITISM_RATE = 0.1
 TOURNAMENT_SIZE = 5
 MUTATION_RATE_PERM = 0.2
-MUTATION_RATE_SPEED = 0.2
+MUTATION_RATE_SPEED = 0.4
 
 # --- MODIFICATION: Added early stopping patience ---
 CONVERGENCE_PATIENCE = 25 # Stop if no improvement after 25 generations

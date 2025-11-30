@@ -9,13 +9,13 @@ avg_vehicle_length = 4.5  # Average vehicle length (in meters)
 tau = avg_vehicle_length/avg_velocity   # Headway time (in seconds)
 alpha = 1.0              # Weight for emergency vehicle delay
 beta = 1.0               # Weight for all vehicle delay
-safety_distance = 5    # Safety distance between vehicles (in meters)
+safety_distance = 5   # Safety distance between vehicles (in meters)
 inter_conflict_distance = 5  # Distance between conflict points (in meters)
 
 # --- Constraint Allowance ---
 speed_penalty_coeff = 0.0   # penalize solutions with speeds far from v_max
 # conflict_weight = 0.0  # penalize conflicts in objective function
-follow_slack= 0.05  # Additional slack time for following vehicles (in seconds), this allows more flexibilty for constraint C0
+follow_slack= 0.0  # Additional slack time for following vehicles (in seconds), this allows more flexibilty for constraint C0
 
 
 pi = [

@@ -28,10 +28,10 @@ from metahueristics.sa import evaluate_solution, validate_speeds
 # ACO PARAMETERS (Ant System)
 # =============================================================================
 NUM_ANTS = 100                    # m: Number of ants per iteration (10-100)
-NUM_ITERATIONS = 400             # Number of ACO iterations (50-500)
+NUM_ITERATIONS = 200             # Number of ACO iterations (50-500)
 ALPHA = 1.0                      # α: Pheromone importance (0.5-2.0, higher = more exploitation)
 BETA = 2.0                       # β: Heuristic importance (1.0-5.0, higher = more greedy)
-RHO = 0.2                        # ρ: Evaporation rate (0.1-0.5, higher = more exploration)
+RHO = 0.5                        # ρ: Evaporation rate (0.1-0.5, higher = more exploration)
 Q = 500.0                        # Q: Pheromone deposit constant (1.0-1000.0)
 TAU_INITIAL = 0.1                # Initial pheromone level (0.01-1.0)
 ELITIST_WEIGHT = 1.0             # Weight for best-so-far solution (1.0-5.0)

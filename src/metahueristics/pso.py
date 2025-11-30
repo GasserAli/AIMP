@@ -25,9 +25,9 @@ from metahueristics.sa import evaluate_solution, validate_speeds, create_initial
 # =============================================================================
 SWARM_SIZE = 20                  # Number of particles (20-50)
 NUM_ITERATIONS = 100             # Number of PSO iterations (50-200)
-W = 0.5                          # Inertia weight (0.4-0.9)
+W = 0.5                         # Inertia weight (0.4-0.9)
 C1 = 1.4                         # Cognitive parameter (1.0-2.0)
-C2 = 1.3                         # Social parameter (1.0-2.0)
+C2 = 1.0                         # Social parameter (1.0-2.0)
 CONVERGENCE_PATIENCE = 60        # Early stopping patience
 
 # PSO Mode
