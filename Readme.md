@@ -1,241 +1,579 @@
-# Intersection Optimization — Visualization & Optimizers
+# Autonomous Intersection Management Platform (AIMP)
+## Metaheuristic Optimization for Traffic Scheduling at Autonomous Intersections
 
-This README explains how to run the project with visualization, how to run and tune the Genetic Algorithm (GA), how to run and compare GA vs Simulated Annealing (SA), and how to run batch/headless experiments.
-
-Last updated: November 16, 2025
-
----
-
-## Contents
-- Quick start
-- Visualization options (matplotlib, web, none)
-- Running SA and GA
-- Tuning GA parameters
-- CLI usage and recommended output format
-- Comparison protocol (GA vs SA)
-- Batch experiments and examples
-- Troubleshooting
+**Course:** Optimization Techniques (MCTR1021) (Winter 2025)
+**Institution:** German University in Cairo (GUC)  
+**Last Updated:** January 2025
 
 ---
 
-## Quick start
+## 📖 Project Overview
 
-1. Open the repository root and edit or run `main_with_viz.py`.
-2. Choose visualization, optimizer and optional parameters (see CLI or variables).
-3. Run:
-   ```bash
-   python main_with_viz.py
-   ```
+### What is AIMP?
+
+The Autonomous Intersection Management Platform (AIMP) is a comprehensive research and simulation platform designed to optimize vehicle scheduling at smart intersections using advanced metaheuristic algorithms. As autonomous vehicles become more prevalent, traditional traffic light systems become obsolete. This project explores how intelligent scheduling algorithms can minimize delays while prioritizing emergency vehicles.
+
+### Course Context & Learning Objectives
+
+This project is developed as part of the **Optimization Techniques** course, where we apply theoretical optimization concepts to real-world problems. Key learning objectives include:
+
+1. **Algorithm Implementation**: Implementing and comparing multiple metaheuristic algorithms (SA, GA, ACO, PSO)
+2. **Performance Analysis**: Conducting rigorous statistical comparisons of algorithm performance
+3. **Constraint Handling**: Managing complex safety constraints (collision avoidance, speed limits)
+4. **Multi-Objective Optimization**: Balancing competing objectives (emergency vehicle priority vs. overall delay)
+5. **Visualization**: Creating interactive visualizations to communicate optimization results
+
+### Why This Problem?
+
+Autonomous intersection management is a critical problem in smart city infrastructure:
+
+- **Real-World Impact**: Optimized intersections can reduce delays by 30-50% compared to traditional traffic lights
+- **Safety Critical**: Vehicle scheduling must guarantee zero collisions
+- **Computational Challenge**: The problem is NP-hard (combinatorial explosion as vehicles increase)
+- **Multi-Objective**: Must balance individual delays, total delay, and emergency vehicle priority
+- **Research Relevance**: Active area of research in autonomous vehicles and smart transportation
+
+### Project Goals
+
+1. **Implement 5 metaheuristic algorithms** from scratch (SA, GA, ACO, PSO, Hybrid)
+2. **Compare algorithm performance** on standardized metrics (objective value, convergence speed, consistency)
+3. **Visualize solutions** with interactive animations showing vehicle movements
+4. **Analyze results** using statistical tests (ANOVA, t-tests) to determine best algorithm
+5. **Document findings** in a comprehensive report with reproducible experiments
 
 
-# --- 1. CHOOSE ALGORITHM --- in the main_with_viz.py
-# 'SA':          Single run of SA (uses sa.MAX_TOTAL_ITERATIONS).
-# 'GA':          Single run of GA (uses ga.NUM_GENERATIONS).
-# 'SA_ANALYSIS': N-run statistical analysis of SA (natural stop).
-# 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
-# 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
-# 'EXPERIMENT':  N-run statistical comparison of SA vs. GA (natural stops).
+## 📁 Project Structure
+
+```
+AIMP/
+├── src/                          # Source code
+│   ├── config.py                 # 🔧 Configuration: vehicles, parameters
+│   ├── main_with_viz.py          # ⭐ MAIN ENTRY POINT (run this!)
+│   ├── main.py                   # Basic test runner (optional)
+│   ├── analyze.py                # Statistical analysis tools
+│   ├── utils.py                  # Helper functions
+│   │
+│   ├── engine/                   # Core intersection logic (DO NOT MODIFY)
+│   │   ├── vehicle.py            # Vehicle class definition
+│   │   ├── geometry.py           # Intersection geometry & conflict points
+│   │   ├── decoder.py            # Solution validation & collision detection
+│   │   └── objective.py          # Objective function calculation
+│   │
+│   ├── metaheuristics/           # 🧬 Optimization algorithms (CUSTOMIZE HERE)
+│   │   ├── sa.py                 # Simulated Annealing
+│   │   ├── ga.py                 # Genetic Algorithm
+│   │   ├── aco.py                # Ant Colony Optimization
+│   │   ├── pso.py                # Particle Swarm Optimization
+│   │   └── sequential_hybrid.py  # Hybrid ACO+PSO approach
+│   │
+│   └── visualization/            # Visualization components
+│       ├── visualization.py      # Matplotlib animation
+│       ├── visualization_utils.py # Helper functions
+│       ├── visualization_server.py # Flask web server
+│       └── templates/
+│           └── intersection.html # Web-based D3.js visualization
+│
+├── experiment_summary_log.csv    # 📊 Output: Experiment results summary
+├── experiment_raw_data_log.csv   # 📊 Output: Detailed run data
+├── requirements.txt              # Python dependencies
+├── README.md                     # This file
+├── ACO_HYPERPARAMETERS.md       # ACO parameter tuning guide
+└── .gitignore                    # Git ignore rules
+```
+
+**Key Files to Know:**
+
+| File | Purpose | When to Use |
+|------|---------|-------------|
+| [`config.py`](src/config.py) | Define vehicles, parameters | Change problem instance |
+| [`main_with_viz.py`](src/main_with_viz.py) | Run algorithms, experiments | **Always use this** |
+| [`metaheuristics/*.py`](src/metaheuristics/) | Algorithm implementations | Tune parameters |
+| [`*.csv`](experiment_summary_log.csv) | Experiment outputs | Analyze results |
+
+---
+
+## 🚀 Getting Started
+
+### 1. Installation
+
+**Prerequisites:**
+- Python 3.8 or higher
+- pip (Python package manager)
+
+**Install Dependencies:**
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd AIMP
+
+# Install required packages
+pip install -r requirements.txt
+```
+
+**Required Packages:**
+- `numpy` - Numerical computations
+- `matplotlib` - Plotting and visualization
+- `flask` - Web server for interactive visualization
+- `pandas` - Data analysis (optional)
+- `scipy` - Statistical tests (optional)
+
+**Verify Installation:**
+
+```bash
+# Quick test (should print vehicle queue info)
+cd src
+python main.py
+```
+
+---
+
+## 📚 Step-by-Step Usage Guide
+
+### STEP 1: Define the Problem Instance
+
+**File:** [`src/config.py`](src/config.py)
+
+This file defines your intersection scenario (vehicles, speeds, priorities).
+
+#### Vehicle Parameters:
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `vehicle_id` | int | Unique identifier | `1, 2, 3, ...` |
+| `approach` | str | Entry direction | `"N"`, `"E"`, `"S"`, `"W"` |
+| `maneuver` | str | Movement type | `"S"` (straight), `"L"` (left), `"R"` (right) |
+| `priority_status` | bool | Emergency vehicle? | `True` / `False` |
+| `velocity` | tuple | Speed range (min, max) | `(20, 50)` |
+
+
+### STEP 2: Choose Algorithm and Run Mode
+
+**File:** [`src/main_with_viz.py`](src/main_with_viz.py)  
+**Lines:** 137-144
+
+#### Configuration Settings:
+
+```python
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+# --- 1. CHOOSE ALGORITHM ---
+OPTIMIZATION_ALGORITHM = 'GA'  # Change this!
 
 # --- 2. CHOOSE VISUALIZATION ---
-# 'matplotlib', 'web', 'none'
-# (Ignored for 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS' modes)
-VISUALIZATION_METHOD = 'matplotlib' 
+VISUALIZATION_METHOD = 'matplotlib'  # or 'web', 'none'
 
-# --- 3. ALGORITHM PARAMETERS ---
-# Budget for *direct comparison modes only* ('BOTH')
-COMPARISON_EVALUATION_BUDGET = 5000 
-# Number of runs for 'SA_ANALYSIS', 'GA_ANALYSIS', 'EXPERIMENT'
-NUM_EXPERIMENT_RUNS = 50  # 
-RANDOM_SEED = 42 
+# --- 3. EXPERIMENT SETTINGS ---
+NUM_EXPERIMENT_RUNS = 30  # For analysis modes
+RANDOM_SEED = 42          # For reproducibility (None = random)
+```
 
-OPTIMIZATION_ALGORITHM = 'GA' 
+#### Available Run Modes:
+
+| Mode | Code | Purpose | Use Case |
+|------|------|---------|----------|
+| **Single Algorithm Runs** |
+| Simulated Annealing | `'SA'` | Run SA once with visualization | Test SA, see animation |
+| Genetic Algorithm | `'GA'` | Run GA once with visualization | Test GA, see animation |
+| Ant Colony Optimization | `'ACO'` | Run ACO once with visualization | Test ACO, see animation |
+| Particle Swarm Optimization | `'PSO'` | Run PSO once with visualization | Test PSO, see animation |
+| Hybrid ACO+PSO | `'HYBRID'` | Run hybrid once with visualization | Test hybrid approach |
+| **Statistical Analysis (N Runs)** |
+| SA Analysis | `'SA_ANALYSIS'` | Run SA N times, compute stats | Evaluate SA performance |
+| GA Analysis | `'GA_ANALYSIS'` | Run GA N times, compute stats | Evaluate GA performance |
+| ACO Analysis | `'ACO_ANALYSIS'` | Run ACO N times, compute stats | Evaluate ACO performance |
+| PSO Analysis | `'PSO_ANALYSIS'` | Run PSO N times, compute stats | Evaluate PSO performance |
+| Hybrid Analysis | `'HYBRID_ANALYSIS'` | Run Hybrid N times, compute stats | Evaluate Hybrid performance |
+| **Comparative Experiments** |
+| Three-Way Comparison | `'EXPERIMENT'` | Compare SA vs GA vs Hybrid (N runs each) | **Final report comparison** |
+| Two-Way (Budget) | `'BOTH'` | Compare SA vs GA with fixed evaluation budget | Fair comparison |
+
+#### Visualization Options:
+
+| Option | Description | Best For |
+|--------|-------------|----------|
+| `'matplotlib'` | Interactive animation window | Single runs, debugging |
+| `'web'` | Flask web server (browser-based) | Presentations, demos |
+| `'none'` | No visualization (fastest) | Batch experiments, analysis |
+
 ---
 
-## Visualization options
+### STEP 3: Run the Platform
 
-Set method in `main_with_viz.py` or via CLI (see CLI section):
+#### Basic Single Run:
 
-- 'matplotlib' — Local matplotlib animation (interactive window).
-- 'web' — Flask + D3 web visualization (open browser at printed URL).
-- 'none' — Headless mode (no visualization; best for batch runs).
-
-Notes:
-- Matplotlib may block execution until closed.
-- Web requires Flask and template files under `templates/`.
-- For headless servers use `'none'`.
-
----
-
-## Running SA and GA
-
-You can run either optimizer. Default variables in `config.py`.
-
-Examples (headless):
-- Run SA:
-  ```bash
-  python main_with_viz.py --optimizer sa --viz none
-  ```
-- Run GA:
-  ```bash
-  python main_with_viz.py --optimizer ga --viz none
-  ```
-
-Interactive (web) example:
 ```bash
-python main_with_viz.py --optimizer ga --viz web
-# Open the printed URL (e.g. http://localhost:5000)
+cd src
+python main_with_viz.py
+```
+
+**What Happens:**
+1. Algorithm runs (progress printed to console)
+2. Best solution found is displayed
+3. Performance plots appear (close to continue)
+4. Animation shows vehicle movements (if visualization enabled)
+
+#### Console Output Example:
+
+```
+=== GENETIC ALGORITHM ===
+Population Size:   50
+Max Generations:  200
+Crossover Rate:   0.8
+Mutation Rate:    0.2
+========================
+
+Generation 1/200: Best=543.21, Avg=678.90
+Generation 10/200: Best=421.34, Avg=489.12
+  ✓ NEW BEST = 421.34
+Generation 20/200: Best=398.56, Avg=445.23
+  ✓ NEW BEST = 398.56
+...
+Generation 200/200: Best=345.67, Avg=378.90
+
+======================================================================
+GENETIC ALGORITHM COMPLETE
+======================================================================
+  Best Objective:     345.67
+  Total Evaluations:  10050
+  Runtime:            42.3 seconds
+  
+Best Solution Found:
+  Emergency Delay (f_em):  12.34s
+  Total Delay (f_all):     234.56s
+  Weighted Objective (f):  345.67
+  Permutation (IDs):       [4, 1, 7, 2, 5, 3, 6, 8]
+  Speeds:                  [45.2, 50.0, 38.7, 42.1, 35.5, 48.3, 40.0, 37.2]
+======================================================================
+
+Displaying GA performance plots...
+  (Close all plot windows to continue to animation)
 ```
 
 ---
 
-## CLI arguments (recommended)
+### STEP 4: Understanding Outputs
 
-If not present, add an argparse block (example below) to `main_with_viz.py` so you can run without editing the file.
+#### 📊 Performance Dashboard (Plots)
 
-Suggested arguments:
-- --viz {matplotlib,web,none}
-- --optimizer {sa,ga}
-- --seed N
-- --out FILE (save JSON summary)
-- GA overrides: --ga-pop, --ga-gen, --ga-cr, --ga-mr
+When algorithm completes, you'll see a **2×2 dashboard** (or 2×3 for comparisons):
 
-Example:
-```bash
-python main_with_viz.py --optimizer ga --viz none --ga-pop 200 --ga-gen 500 --seed 123 --out results/ga_run1.json
+**Single Algorithm Dashboard:**
+
+| Plot | What It Shows | Interpretation |
+|------|---------------|----------------|
+| **Top-Left: Convergence** | Best objective value over iterations | Faster drop = faster convergence |
+| **Top-Right: Diversity/Temp** | Population diversity (GA) or Temperature (SA) | High = exploring, Low = exploiting |
+| **Bottom-Left: Delay Components** | Emergency vs Total delay over time | Shows priority balancing |
+| **Bottom-Right: Speed Distribution** | Histogram of assigned speeds | Check if speeds are reasonable |
+
+**Three-Way Comparison Dashboard (EXPERIMENT mode):**
+
+| Plot | What It Shows |
+|------|---------------|
+| **Convergence Overlay** | All algorithms on same axes (see which converges fastest) |
+| **Final Quality Bar Chart** | Winner highlighted in gold |
+| **Efficiency Metrics** | Cost reduction per 1000 evaluations |
+| **Delay Breakdowns** | Emergency, total, average delays for all algorithms |
+
+**How to Read Convergence Plots:**
+
+```
+Good Convergence:
+Objective
+   500│ ╲
+      │  ╲___
+   400│      ╲___
+      │          ╲____
+   300│               ╲___________  (plateau = converged)
+      └────────────────────────────>
+         Iterations
+
+Bad Convergence (stuck):
+Objective
+   500│ ╲
+      │  ╲
+   450│   ╲_____________________ (flat too early)
+      │
+   400│
+      └────────────────────────────>
+         Iterations
 ```
 
----
+#### 📁 CSV Output Files
 
-## GA: parameters and tuning
+**1. Summary Log: [`experiment_summary_log.csv`](experiment_summary_log.csv)**
 
-Place tunable GA parameters inside `ga.py` or `config.py` (or override via CLI):
+One row per experiment (aggregate statistics):
 
-Example GA params:
+```csv
+Timestamp,Algorithm,Mean Cost (f),Std Deviation (f),Avg Run Time (s),Best Cost Overall,Num Runs,Avg Evals Used
+2025-01-15 10:30:00,GA,345.67,8.23,42.1,332.45,30,10050
+2025-01-15 11:00:00,SA,389.12,12.45,38.9,365.23,30,8234
+2025-01-15 11:30:00,HYBRID,328.91,6.78,58.2,312.56,30,15000
+```
+
+**Columns Explained:**
+- **Mean Cost**: Average objective across all runs
+- **Std Deviation**: Consistency (lower = more reliable)
+- **Best Cost Overall**: Best solution found in any run
+- **Avg Evals Used**: Average fitness evaluations (computational cost)
+
+**2. Raw Data Log: [`experiment_raw_data_log.csv`](experiment_raw_data_log.csv)**
+
+One row per individual run:
+
+```csv
+Run,Algorithm,Objective,Evals,Time,Permutation,Speeds
+1,GA,345.67,10000,42.2,[4,1,7,2,5,3,6],[45.2,38.7,50.0,...]
+2,GA,352.13,10000,41.8,[4,7,1,2,5,3,6],[43.1,40.2,48.5,...]
+3,GA,338.45,10000,43.1,[1,4,7,2,5,3,6],[50.0,45.2,38.7,...]
+...
+```
+
+**Use Cases:**
+- **Summary Log**: Quick comparison of algorithms (mean, std, best)
+- **Raw Data Log**: Detailed analysis (variance, outliers, convergence patterns)
+
+#### 🎬 Animation Output
+
+**Matplotlib Mode:**
+
+A window appears showing:
+- Intersection layout with conflict points
+- Vehicles moving along their paths
+- Color coding: Blue=normal, Red=emergency
+- Curved trajectories for left turns
+
+**Controls:**
+- Toolbar: Zoom, pan, save image
+- Close window to exit
+
+**Web Mode:**
+
+Browser opens at `http://localhost:5000` showing:
+- Interactive D3.js animation
+- Vehicle info on hover
+- Playback controls
+- Modern responsive design
+
+
+
+## 🧪 Running Experiments for Your Report
+
+### Recommended Experiment Workflow:
+
+#### 1. Quick Test (5 minutes)
+
+Test each algorithm works:
+
 ```python
-GA_PARAMS = {
-    "POPULATION_SIZE": 100,
-    "GENERATIONS": 200,
-    "CROSSOVER_RATE": 0.8,
-    "MUTATION_RATE": 0.02,
-    "ELITISM": True,
-    "ELITE_SIZE": 2,
-    "TOURNAMENT_SIZE": 5,
-    "RANDOM_SEED": None,
+# main_with_viz.py
+OPTIMIZATION_ALGORITHM = 'GA'  # Test SA, GA, ACO, PSO, HYBRID
+NUM_EXPERIMENT_RUNS = 1
+VISUALIZATION_METHOD = 'matplotlib'
+```
+
+Run: `python main_with_viz.py`
+
+**Check:**
+- ✅ Algorithm completes without errors
+- ✅ Plots display correctly
+- ✅ Animation shows vehicles moving
+
+#### 2. Small-Scale Analysis (30 minutes)
+
+Get initial performance data:
+
+```python
+OPTIMIZATION_ALGORITHM = 'EXPERIMENT'  # Compares SA, GA, Hybrid
+NUM_EXPERIMENT_RUNS = 10
+VISUALIZATION_METHOD = 'none'  # Faster
+```
+
+**Output:**
+- Summary statistics (mean, std)
+- Box plots comparing algorithms
+- CSV logs for detailed analysis
+
+#### 3. Full Experimental Run (2-4 hours)
+
+Final data for report:
+
+```python
+OPTIMIZATION_ALGORITHM = 'EXPERIMENT'
+NUM_EXPERIMENT_RUNS = 30  # 50 for publication-quality
+VISUALIZATION_METHOD = 'none'
+RANDOM_SEED = 42  # Reproducibility
+```
+
+**Run overnight or on powerful machine**
+
+**Deliverables:**
+- `experiment_summary_log.csv` (aggregate stats)
+- `experiment_raw_data_log.csv` (per-run data)
+- Performance dashboards (save as PNG)
+- Statistical test results (ANOVA, t-tests)
+
+#### 4. Individual Algorithm Deep Dive
+
+For each algorithm in your report section:
+
+```python
+OPTIMIZATION_ALGORITHM = 'GA_ANALYSIS'  # or SA_ANALYSIS, ACO_ANALYSIS
+NUM_EXPERIMENT_RUNS = 30
+VISUALIZATION_METHOD = 'none'
+```
+
+**Analyze:**
+- Convergence patterns
+- Parameter sensitivity
+- Failure cases
+- Best/worst runs
+
+---
+
+## 📊 Interpreting Results for Your Report
+
+### Key Metrics to Report:
+
+| Metric | What It Measures | How to Get It |
+|--------|------------------|---------------|
+| **Mean Objective** | Average solution quality | From `experiment_summary_log.csv` |
+| **Std Deviation** | Consistency/reliability | From summary log (lower = better) |
+| **Best Found** | Best solution across all runs | From summary log |
+| **Convergence Rate** | How fast algorithm improves | Plot slope analysis |
+| **Computational Cost** | Total evaluations/runtime | From summary log |
+| **Success Rate** | % of runs finding "good" solution | Count runs below threshold |
+
+### Statistical Tests:
+
+**ANOVA (Are algorithms different?):**
+- **p < 0.05**: Yes, significant difference
+- **p ≥ 0.05**: No significant difference
+
+**Pairwise t-tests (Which is better?):**
+- Compare each pair of algorithms
+- Report p-values and winners
+- Use Bonferroni correction if needed
+
+### Sample Report Table:
+
+```
+Table 1: Algorithm Performance Comparison (30 runs each)
+
+Algorithm  | Mean (f) | Std Dev | Best (f) | Worst (f) | Avg Time (s) | Avg Evals
+-----------|----------|---------|----------|-----------|--------------|----------
+SA         | 389.12   | 12.45   | 365.23   | 418.90    | 38.9         | 8234
+GA         | 345.67   | 8.23    | 332.45   | 367.12    | 42.1         | 10050
+ACO        | 368.45   | 10.12   | 352.67   | 391.23    | 51.3         | 20000
+PSO        | 356.78   | 11.34   | 341.23   | 382.45    | 35.6         | 3000
+Hybrid     | 328.91*  | 6.78*   | 312.56*  | 344.12    | 58.2         | 15000
+
+* Statistically significant best (p < 0.01)
+```
+
+### Sample Report Figures:
+
+**Figure 1: Convergence Comparison**
+- Overlay plot showing all algorithms
+- Caption: "GA converges fastest, Hybrid achieves best final solution"
+
+**Figure 2: Distribution Box Plots**
+- Shows variance and outliers
+- Caption: "Hybrid has lowest variance (most reliable)"
+
+**Figure 3: Efficiency Analysis**
+- Cost reduction per 1000 evaluations
+- Caption: "PSO most efficient early, GA catches up later"
+
+---
+
+
+## 📖 Algorithm Background (For Report Introduction)
+
+### Simulated Annealing (SA)
+
+**Inspiration:** Metallurgical annealing process  
+**Type:** Single-solution, local search with probabilistic acceptance  
+**Strengths:** Simple, escapes local optima, good for continuous optimization  
+**Weaknesses:** Sensitive to cooling schedule, single-threaded exploration  
+**Best for:** Problems with smooth objective landscapes
+
+**Key Papers:**
+- Kirkpatrick et al. (1983) - "Optimization by Simulated Annealing"
+
+### Genetic Algorithm (GA)
+
+**Inspiration:** Natural evolution and genetics  
+**Type:** Population-based, evolutionary  
+**Strengths:** Maintains diversity, explores multiple regions, good global search  
+**Weaknesses:** Many parameters to tune, higher computational cost  
+**Best for:** Large discrete search spaces, multi-modal problems
+
+**Key Papers:**
+- Goldberg (1989) - "Genetic Algorithms in Search, Optimization and Machine Learning"
+
+### Ant Colony Optimization (ACO)
+
+**Inspiration:** Foraging behavior of ants  
+**Type:** Population-based, pheromone-guided construction  
+**Strengths:** Exploits problem structure, good for combinatorial problems  
+**Weaknesses:** Many parameters, can converge prematurely  
+**Best for:** Sequencing problems, graph problems (TSP, routing)
+
+**Key Papers:**
+- Dorigo & Stützle (2004) - "Ant Colony Optimization"
+
+### Particle Swarm Optimization (PSO)
+
+**Inspiration:** Flocking behavior of birds/fish  
+**Type:** Population-based, velocity-driven  
+**Strengths:** Fast convergence, few parameters, good for continuous optimization  
+**Weaknesses:** Struggles with discrete variables, can get stuck in local optima  
+**Best for:** Continuous optimization, speed fine-tuning
+
+**Key Papers:**
+- Kennedy & Eberhart (1995) - "Particle Swarm Optimization"
+
+### Hybrid ACO+PSO
+
+**Type:** Sequential two-phase approach  
+**Rationale:** Leverage ACO's strength in permutation optimization and PSO's strength in continuous optimization  
+**Strengths:** Combines best of both worlds, separates problem concerns  
+**Weaknesses:** Longer runtime, more parameters  
+**Best for:** Mixed integer-continuous optimization problems
+
+---
+
+
+## 🎓 Citation & References
+
+If you use this platform in your research or report:
+
+```bibtex
+@software{aimp2025,
+  title={Autonomous Intersection Management Platform: Metaheuristic Optimization for Traffic Scheduling},
+  author={[Your Names]},
+  institution={German University in Cairo},
+  course={Optimization Techniques (OPT25)},
+  year={2025},
+  url={[Repository URL]}
 }
 ```
 
-Tuning tips:
-- Population size: larger increases exploration, costs evaluation time.
-- Generations: more generations usually improve quality; combine with early stopping.
-- Mutation rate: raise if premature convergence; lower if search becomes too random.
-- Crossover rate: high values favor recombination; tune with mutation.
-- Elitism: preserves best individuals — useful in noisy fitness landscapes.
-- Use multiple seeds and aggregate statistics.
+**Related Work:**
+- Dresner & Stone (2004) - "Multiagent coordination for traffic light control"
+- Li et al. (2013) - "Conflict-free cooperative adaptive cruise control"
+- [Add your references]
 
 ---
 
-## SA: parameters and tuning
 
-Typical SA parameters (in `main_with_viz.py` or `config.py`):
-```python
-T_INITIAL = 1000.0
-T_MIN = 1.0
-COOLING_RATE = 0.99
-MAX_ITER_PER_TEMP = 20
-MAX_TOTAL_ITERATIONS = 100000
-RANDOM_SEED = None
-```
-
-Tuning tips:
-- Increase T_INITIAL or reduce COOLING_RATE to improve escaping local minima.
-- Increase MAX_ITER_PER_TEMP to allow more local search per temperature.
-- Use fixed seeds for reproducibility when comparing methods.
+**Good luck with your project! 🚀**
 
 ---
 
-## Recommended output format
-
-Save run summaries to JSON/CSV for later analysis. Example JSON schema:
-```json
-{
-  "optimizer": "ga",
-  "seed": 42,
-  "best_cost": 123.45,
-  "time_seconds": 12.3,
-  "evaluations": 3456,
-  "iterations": 200,
-  "best_solution": [ ... ],
-  "history": [ ... ]  // optional per-iteration best cost or population stats
-}
-```
-
-Have the runner write this file when `--out` is provided.
-
----
-
-## Compare GA vs SA — protocol
-
-1. Fix vehicle/config settings in `config.py`.
-2. Choose common seeds or a seed list.
-3. Run N repeats per optimizer (N >= 10 recommended).
-4. Save summaries (JSON) with history, time, and final cost.
-5. Compute metrics: best, mean, median, std, time-to-best.
-6. Plot convergence curves using the saved histories.
-
-
-
-Interpretation guide:
-- Use time-to-best and quality to judge practical performance.
-- Compare convergence curves for per-iteration or per-second performance.
-- Use statistical tests (e.g., Wilcoxon) if needed.
-
----
-
-## Batch experiments and automation
-
-- Use 'none' visualization for batch runs.
-- Parallelize independent runs across cores or machines.
-- Save histories and final solutions to disk for offline plotting.
-
-Example CI-friendly run (single run):
-```bash
-python main_with_viz.py --optimizer ga --viz none --seed 123 --ga-pop 150 --ga-gen 300 --out results/ga_123.json
-```
-
----
-
-## Example: add CLI parsing to main_with_viz.py
-
-Patch suggestion (insert into `main_with_viz.py` near top and use parsed values later):
-
-
-
-## Troubleshooting
-
-- "Could not import matplotlib" — run `pip install matplotlib`.
-- "Could not import Flask" — run `pip install flask`.
-- Web server won't start — check port 5000 usage or change port in `visualization_utils.py`.
-- GA seems stuck — increase mutation or population, or add diversity (restart runs).
-- Ensure both GA and SA use the same evaluation function and constraints for fair comparison.
-
----
-
-## Minimal sanity checks before experiments
-
-- Fix `RANDOM_SEED` or pass `--seed` for reproducibility.
-- Confirm `config.py` vehicle list and evaluation function are correct.
-- Verify output (JSON) contains `best_cost` and `history` if you need convergence curves.
-
----
-
-## Support
-
-If problems persist:
-- Inspect console logs.
-- Confirm CLI arguments are parsed and applied.
-- Check that `ga.py` consumes GA params from `GA_PARAMS`.
-- Open an issue or attach run logs and sample JSON outputs.
-
---- 
-
-End of README
+**End of README** | Version 3.0 - Course Project Edition | January 2025

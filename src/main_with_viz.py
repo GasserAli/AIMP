@@ -136,7 +136,7 @@ except ImportError as e:
 # 'PSO_ANALYSIS': N-run statistical analysis of PSO (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. Hybrid (natural stops).
-OPTIMIZATION_ALGORITHM = 'EXPERIMENT'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'BOTH', 'EXPERIMENT'
+OPTIMIZATION_ALGORITHM = 'GA'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'BOTH', 'EXPERIMENT'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
