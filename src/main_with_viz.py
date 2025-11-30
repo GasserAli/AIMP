@@ -92,7 +92,7 @@ except ImportError as e:
 # 'GA_ANALYSIS':  N-run statistical analysis of GA (uses ga.NUM_GENERATIONS).
 # 'BOTH':         Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':   N-run statistical comparison of SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
-OPTIMIZATION_ALGORITHM = 'GA' 
+OPTIMIZATION_ALGORITHM = 'GA_ANALYSIS' 
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -103,7 +103,7 @@ VISUALIZATION_METHOD = 'none'
 # Budget for *direct comparison modes only* ('BOTH', 'EXPERIMENT')
 COMPARISON_EVALUATION_BUDGET = 5000 
 # Number of runs for 'SA_ANALYSIS', 'GA_ANALYSIS', 'EXPERIMENT'
-NUM_EXPERIMENT_RUNS = 3  
+NUM_EXPERIMENT_RUNS = 5  
 RANDOM_SEED = 42 
 
 # SA Parameters (used for 'SA' and 'SA_ANALYSIS')
