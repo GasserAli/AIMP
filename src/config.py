@@ -1,16 +1,23 @@
 # File: config.py
 import random
-from vehicle import Vehicle  # Import the Vehicle class from vehicle.py
+from engine.vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 
-# --- Tunable Parameters ---
-velocity_range = (10,12)  # Minimum and maximum velocity for all vehicles
-tau = 1.0                # Headway time (in seconds)
+# --- Tunable Config Parameters, this is the enviroment setup ---
+velocity_range = (6,18)  # Minimum and maximum velocity for all vehicles
+avg_velocity = sum(velocity_range) / 2  # Average velocity for reference
+avg_vehicle_length = 4.5  # Average vehicle length (in meters)
+tau = avg_vehicle_length/avg_velocity   # Headway time (in seconds)
 alpha = 1.0              # Weight for emergency vehicle delay
 beta = 1.0               # Weight for all vehicle delay
-safety_distance = 4    # Safety distance between vehicles (in meters)
-inter_conflict_distance = 4  # Distance between conflict points (in meters)
+safety_distance = 5   # Safety distance between vehicles (in meters)
+inter_conflict_distance = 5  # Distance between conflict points (in meters)
 
-# --- MODIFICATION: New randomly generated static list of 60 vehicles ---
+# --- Constraint Allowance ---
+speed_penalty_coeff = 0.0   # penalize solutions with speeds far from v_max
+# conflict_weight = 0.0  # penalize conflicts in objective function
+follow_slack= 0.0  # Additional slack time for following vehicles (in seconds), this allows more flexibilty for constraint C0
+
+
 pi = [
     Vehicle(vehicle_id=1, approach="W", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=2, approach="N", maneuver="S", priority_status=False, velocity=velocity_range),
@@ -25,7 +32,7 @@ pi = [
     Vehicle(vehicle_id=11, approach="E", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=12, approach="E", maneuver="L", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=13, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),
-    Vehicle(vehicle_id=14, approach="N", maneuver="R", priority_status=True, velocity=velocity_range),
+    Vehicle(vehicle_id=14, approach="N", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=15, approach="S", maneuver="S", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=16, approach="N", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=17, approach="S", maneuver="S", priority_status=False, velocity=velocity_range),
@@ -33,14 +40,22 @@ pi = [
     Vehicle(vehicle_id=19, approach="W", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=20, approach="W", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=21, approach="N", maneuver="S", priority_status=False, velocity=velocity_range),
+<<<<<<< HEAD
     Vehicle(vehicle_id=22, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),
+=======
+    Vehicle(vehicle_id=22, approach="S", maneuver="L", priority_status=True, velocity=velocity_range),
+>>>>>>> 72932df63bd5112f0084039bf07cfd222868398b
     Vehicle(vehicle_id=23, approach="N", maneuver="L", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=24, approach="E", maneuver="S", priority_status=True, velocity=velocity_range),
     Vehicle(vehicle_id=25, approach="E", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=26, approach="W", maneuver="R", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=27, approach="S", maneuver="L", priority_status=False, velocity=velocity_range),
     Vehicle(vehicle_id=28, approach="W", maneuver="S", priority_status=False, velocity=velocity_range),
+<<<<<<< HEAD
     Vehicle(vehicle_id=29, approach="W", maneuver="S", priority_status=True, velocity=velocity_range),
+=======
+    Vehicle(vehicle_id=29, approach="W", maneuver="S", priority_status=False, velocity=velocity_range),
+>>>>>>> 72932df63bd5112f0084039bf07cfd222868398b
     Vehicle(vehicle_id=30, approach="E", maneuver="R", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=31, approach="N", maneuver="L", priority_status=False, velocity=velocity_range),
     # Vehicle(vehicle_id=32, approach="E", maneuver="S", priority_status=False, velocity=velocity_range),

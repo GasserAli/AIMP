@@ -8,11 +8,11 @@ import traceback
 
 # --- Import Project Files ---
 import config
-import objective
-from geometry import Geometry
-from decoder import run_decoder
+import engine.objective as objective
+from engine.geometry import Geometry
+from engine.decoder import run_decoder
 try:
-    from visualization import IntersectionVisualization
+    from visualization.visualization import IntersectionVisualization
     animation_enabled = True
     print("Successfully imported visualization module.")
 except ImportError:
@@ -21,7 +21,7 @@ except ImportError:
 # --- End Import ---
 
 # --- SA Parameters ---
-T_INITIAL = 100.0
+T_INITIAL = 1000.0
 T_MIN = 1.0
 COOLING_RATE = 0.99
 MAX_ITER_PER_TEMP = 5
@@ -32,7 +32,7 @@ def create_initial_solution(geom):
     Generates a valid initial solution (permutation, speeds).
     Respects C0 constraint.
     """
-    initial_perm = copy.deepcopy(config.pi)
+    initial_perm = [v for q in geom.entry_queues.values() for v in q]
     random.shuffle(initial_perm)
     
     initial_speeds_dict = {}
@@ -76,51 +76,78 @@ def create_initial_solution(geom):
 
 def validate_speeds(permutation, speeds, geom):
     """
-    Enforces the C0 (no-catch-up) constraint.
+    Enforces C0 with a soft slack: followers can be slightly faster than leader.
     """
     v_new = list(speeds)
     speed_dict = {p.id: s for p, s in zip(permutation, v_new)}
+    epsilon = getattr(config, "follow_slack", 0.00)  # m/s slack; tune 0.01-0.5
+
     for queue in geom.entry_queues.values():
-        if not queue: continue
-        
-        leader_in_queue = None
+        if not queue: 
+            continue
+
+        # find leader in this queue (first vehicle present in speed_dict)
+        leader = None
         for v in queue:
             if v.id in speed_dict:
-                leader_in_queue = v
+                leader = v
                 break
-        if not leader_in_queue: continue
-        
-        last_speed = speed_dict[leader_in_queue.id]
-        
-        followers_in_queue = [v for v in queue if v.id != leader_in_queue.id and v.id in speed_dict]
-        
-        for v_follower in followers_in_queue:
-            follower_speed = speed_dict[v_follower.id]
-            if follower_speed > last_speed:
-                speed_dict[v_follower.id] = last_speed
-            last_speed = speed_dict[v_follower.id] 
+        if not leader:
+            continue
 
-    validated_speeds_list = [speed_dict[v.id] for v in permutation]
-    return validated_speeds_list
+        last_speed = speed_dict[leader.id]
+        # apply soft clamp down the queue
+        followers = [v for v in queue if v.id != leader.id and v.id in speed_dict]
+        for follower in followers:
+            s = speed_dict[follower.id]
+            # allow slight exceedance but limit it
+            if s > last_speed + epsilon:
+                speed_dict[follower.id] = last_speed + epsilon
+            last_speed = speed_dict[follower.id]
 
+    return [speed_dict[v.id] for v in permutation]
 
+# --- replace generate_neighbor in sa.py with this ---
 def generate_neighbor(perm_current, speeds_current, geom):
     """
-    Generates a new "neighbor" solution (perm or speed change).
+    Generates a neighbor by either swapping two perm entries or mutating speeds.
+    Speed mutations are leader-focused or block-based to give SA meaningful moves.
     """
     perm_new = copy.deepcopy(perm_current)
     speeds_new = copy.deepcopy(speeds_current)
     v_min_global, v_max_global = config.velocity_range
 
-    if random.random() < 0.5 and len(perm_new) > 1:
+    # probability to mutate permutation vs speeds
+    if random.random() < 0.4 and len(perm_new) > 1:
+        # permutation swap
         idx1, idx2 = random.sample(range(len(perm_new)), 2)
         perm_new[idx1], perm_new[idx2] = perm_new[idx2], perm_new[idx1]
-    elif len(speeds_new) > 0:
-        idx = random.randrange(len(speeds_new))
-        change = random.uniform(-2.0, 2.0)
-        speeds_new[idx] += change
-        speeds_new[idx] = max(v_min_global, min(speeds_new[idx], v_max_global))
+    else:
+        # speed mutation: choose leader-centered mutation with higher probability
+        if random.random() < 0.75:
+            # mutate a leader from a random non-empty queue
+            nonempty_queues = [q for q in geom.entry_queues.values() if q]
+            if nonempty_queues:
+                q = random.choice(nonempty_queues)
+                leader = q[0]
+                # find leader index in perm_new
+                try:
+                    idx = next(i for i, v in enumerate(perm_new) if v.id == leader.id)
+                except StopIteration:
+                    idx = random.randrange(len(speeds_new))
+                # larger adaptive change
+                change = random.uniform(-1.5, 1.5)
+                speeds_new[idx] = max(v_min_global, min(v_max_global, speeds_new[idx] + change))
+        else:
+            # block mutation: change a small block of speeds
+            total = len(speeds_new)
+            block = max(1, int(total * 0.08))  # 8% of vehicles
+            start = random.randrange(0, total - block + 1)
+            for i in range(start, start + block):
+                change = random.uniform(-1.2, 1.2)
+                speeds_new[i] = max(v_min_global, min(v_max_global, speeds_new[i] + change))
 
+    # enforce C0 (soft clamp or validate)
     speeds_new = validate_speeds(perm_new, speeds_new, geom)
     return perm_new, speeds_new
 
@@ -147,11 +174,25 @@ def evaluate_solution(permutation, speeds, geom, tau_p_dict,
                  decoder_results = [{"id": v.id, "delay": 9999.0, "is_emergency": v.priority_status} for v in permutation]
                  scheduled_times, t_ear = {}, {}
         else:
-            decoder_results = decoder_output
+            # Decoder now returns (decoder_results, conflict_penalty)
+            if isinstance(decoder_output, tuple):
+                decoder_results, conflict_penalty = decoder_output
+            else:
+                decoder_results = decoder_output
+                # conflict_penalty = 0.0
             scheduled_times, t_ear = {}, {} 
 
         obj_dict = objective.calculate_objective(decoder_results)
+        # # --- Speed reward ---
+        v_min, v_max = config.velocity_range
+        gamma = getattr(config, "speed_penalty_coeff", 0.02)   # small coefficient
 
+        # If speeds is your list of vehicle speeds:
+        speed_reward = +gamma * sum((v_max - s) for s in speeds)
+
+        # Apply reward (smaller obj["f"] is better)
+        obj_dict["f"] += speed_reward
+        # obj_dict["f"] += conflict_penalty
         if return_full_schedule:
             return obj_dict, scheduled_times, t_ear
         else:
@@ -209,12 +250,14 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
     if verbose:
         print("--- Starting Simulated Annealing ---")
         print("Initializing geometry and parameters...")
-        
+
+    all_vehicles = copy.deepcopy(config.pi)
+
     geom_for_validation = Geometry()
-    all_vehicles = config.pi
     geom_for_validation.create_entry_queue(all_vehicles)
     for v in all_vehicles:
         geom_for_validation.set_trajectory(v)
+
     all_points = set().union(*(v.path for v in all_vehicles if v.path))
     if not all_points:
         print("Error: No vehicles or no paths found. Exiting.")
@@ -298,6 +341,8 @@ def run_sa(T_init=T_INITIAL, T_min=T_MIN, cool_rate=COOLING_RATE,
         if T <= T_min: print(f"Termination: Reached minimum temperature ({T_min}). Final T={T:.2f}")
         print(f"Total evaluations: {iter_count}")
         print(f"Best Objective (f): {obj_best:.2f}")
+        print(f"Best Permutation (IDs): {[v.id for v in perm_best]}")
+        print(f"Best Speeds: {[round(s,2) for s in speeds_best]}")
     
     return perm_best, speeds_best, obj_best, history, geom_for_validation, tau_p_dict, iter_count
 
@@ -306,7 +351,7 @@ if __name__ == "__main__":
     
     # --- MODIFICATION: Must use the new smooth visualizer ---
     try:
-        from visualization import IntersectionVisualization
+        from visualization.visualization import IntersectionVisualization
         animation_enabled_standalone = True
     except ImportError:
         animation_enabled_standalone = False

@@ -1,270 +1,241 @@
-# Visualization Guide
+# Intersection Optimization — Visualization & Optimizers
 
-This guide explains how to use the new `main_with_viz.py` file to run the intersection optimization with your choice of visualization.
+This README explains how to run the project with visualization, how to run and tune the Genetic Algorithm (GA), how to run and compare GA vs Simulated Annealing (SA), and how to run batch/headless experiments.
 
-## Quick Start
+Last updated: November 16, 2025
 
-### 1. Choose Your Visualization Method
+---
 
-Open `main_with_viz.py` and modify the `VISUALIZATION_METHOD` variable (around line 21):
+## Contents
+- Quick start
+- Visualization options (matplotlib, web, none)
+- Running SA and GA
+- Tuning GA parameters
+- CLI usage and recommended output format
+- Comparison protocol (GA vs SA)
+- Batch experiments and examples
+- Troubleshooting
 
-```python
-VISUALIZATION_METHOD = 'web'  # Options: 'matplotlib', 'web', or 'none'
-```
+---
 
-### 2. Run the Program
+## Quick start
 
+1. Open the repository root and edit or run `main_with_viz.py`.
+2. Choose visualization, optimizer and optional parameters (see CLI or variables).
+3. Run:
+   ```bash
+   python main_with_viz.py
+   ```
+
+
+# --- 1. CHOOSE ALGORITHM --- in the main_with_viz.py
+# 'SA':          Single run of SA (uses sa.MAX_TOTAL_ITERATIONS).
+# 'GA':          Single run of GA (uses ga.NUM_GENERATIONS).
+# 'SA_ANALYSIS': N-run statistical analysis of SA (natural stop).
+# 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
+# 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
+# 'EXPERIMENT':  N-run statistical comparison of SA vs. GA (natural stops).
+
+# --- 2. CHOOSE VISUALIZATION ---
+# 'matplotlib', 'web', 'none'
+# (Ignored for 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS' modes)
+VISUALIZATION_METHOD = 'matplotlib' 
+
+# --- 3. ALGORITHM PARAMETERS ---
+# Budget for *direct comparison modes only* ('BOTH')
+COMPARISON_EVALUATION_BUDGET = 5000 
+# Number of runs for 'SA_ANALYSIS', 'GA_ANALYSIS', 'EXPERIMENT'
+NUM_EXPERIMENT_RUNS = 50  # 
+RANDOM_SEED = 42 
+
+OPTIMIZATION_ALGORITHM = 'GA' 
+---
+
+## Visualization options
+
+Set method in `main_with_viz.py` or via CLI (see CLI section):
+
+- 'matplotlib' — Local matplotlib animation (interactive window).
+- 'web' — Flask + D3 web visualization (open browser at printed URL).
+- 'none' — Headless mode (no visualization; best for batch runs).
+
+Notes:
+- Matplotlib may block execution until closed.
+- Web requires Flask and template files under `templates/`.
+- For headless servers use `'none'`.
+
+---
+
+## Running SA and GA
+
+You can run either optimizer. Default variables in `config.py`.
+
+Examples (headless):
+- Run SA:
+  ```bash
+  python main_with_viz.py --optimizer sa --viz none
+  ```
+- Run GA:
+  ```bash
+  python main_with_viz.py --optimizer ga --viz none
+  ```
+
+Interactive (web) example:
 ```bash
-python main_with_viz.py
+python main_with_viz.py --optimizer ga --viz web
+# Open the printed URL (e.g. http://localhost:5000)
 ```
-
-## Visualization Options
-
-### Option 1: Matplotlib Animation (`'matplotlib'`)
-
-**Description:** Traditional matplotlib-based animation with interactive plot window
-
-**Features:**
-- Frame-by-frame animation of vehicles moving through the intersection
-- Shows conflict points and vehicle trajectories
-- Can pause/play animation
-- Good for detailed analysis and recording
-
-**Requirements:**
-- matplotlib library
-- `visualization.py` file
-
-**Usage:**
-```python
-VISUALIZATION_METHOD = 'matplotlib'
-```
-
-**Pros:**
-- Self-contained visualization
-- Can save animations as video files
-- Good for presentations and analysis
-
-**Cons:**
-- Blocks execution until window is closed
-- Less interactive
-- May not work well in headless environments
 
 ---
 
-### Option 2: Web-Based Visualization (`'web'`)
+## CLI arguments (recommended)
 
-**Description:** Modern web-based D3.js visualization with interactive browser interface
+If not present, add an argparse block (example below) to `main_with_viz.py` so you can run without editing the file.
 
-**Features:**
-- Real-time animation in your web browser
-- Shows permutation order panel
-- Highlights currently moving vehicles
-- Interactive SVG-based rendering
-- Conflict points clearly labeled
+Suggested arguments:
+- --viz {matplotlib,web,none}
+- --optimizer {sa,ga}
+- --seed N
+- --out FILE (save JSON summary)
+- GA overrides: --ga-pop, --ga-gen, --ga-cr, --ga-mr
 
-**Requirements:**
-- Flask web server
-- `visualization_server.py` file
-- `visualization_utils.py` file
-- `templates/intersection.html` file
-
-**Usage:**
-```python
-VISUALIZATION_METHOD = 'web'
+Example:
+```bash
+python main_with_viz.py --optimizer ga --viz none --ga-pop 200 --ga-gen 500 --seed 123 --out results/ga_run1.json
 ```
-
-**How to use:**
-1. Run the program
-2. Wait for message: "Open your browser to: http://localhost:5000"
-3. Open your browser and navigate to that URL
-4. Watch the visualization in real-time
-5. Press Ctrl+C in terminal to stop server
-
-**Pros:**
-- Modern, interactive interface
-- Can access from any device on local network
-- Better for real-time monitoring
-- Visual permutation order panel
-- Color-coded emergency vehicles
-
-**Cons:**
-- Requires web server
-- Needs browser to view
 
 ---
 
-### Option 3: No Visualization (`'none'`)
+## GA: parameters and tuning
 
-**Description:** Run optimization without any visualization (headless mode)
+Place tunable GA parameters inside `ga.py` or `config.py` (or override via CLI):
 
-**Usage:**
+Example GA params:
 ```python
-VISUALIZATION_METHOD = 'none'
+GA_PARAMS = {
+    "POPULATION_SIZE": 100,
+    "GENERATIONS": 200,
+    "CROSSOVER_RATE": 0.8,
+    "MUTATION_RATE": 0.02,
+    "ELITISM": True,
+    "ELITE_SIZE": 2,
+    "TOURNAMENT_SIZE": 5,
+    "RANDOM_SEED": None,
+}
 ```
 
-**Pros:**
-- Fastest execution
-- Works in any environment
-- Good for batch processing
-- Ideal for server/cluster computing
+Tuning tips:
+- Population size: larger increases exploration, costs evaluation time.
+- Generations: more generations usually improve quality; combine with early stopping.
+- Mutation rate: raise if premature convergence; lower if search becomes too random.
+- Crossover rate: high values favor recombination; tune with mutation.
+- Elitism: preserves best individuals — useful in noisy fitness landscapes.
+- Use multiple seeds and aggregate statistics.
 
-**Cons:**
-- No visual feedback
-- Results shown only as text output
+---
 
-## Complete Example Workflows
+## SA: parameters and tuning
 
-### Workflow 1: Development with Web Visualization
-
+Typical SA parameters (in `main_with_viz.py` or `config.py`):
 ```python
-# In main_with_viz.py
-VISUALIZATION_METHOD = 'web'
-
-# Run
-python main_with_viz.py
-
-# Output:
-# ======================================================================
-# INTERSECTION TRAFFIC OPTIMIZATION
-# ======================================================================
-# Visualization Method: WEB
-# ======================================================================
-# 
-# ✓ Web-based visualization enabled
-# 
-# [Running SA optimization...]
-# 
-# ======================================================================
-# ✓ Web visualization server running!
-#   Open your browser to: http://localhost:5000
-#   Press Ctrl+C to stop the server
-# ======================================================================
+T_INITIAL = 1000.0
+T_MIN = 1.0
+COOLING_RATE = 0.99
+MAX_ITER_PER_TEMP = 20
+MAX_TOTAL_ITERATIONS = 100000
+RANDOM_SEED = None
 ```
 
-### Workflow 2: Analysis with Matplotlib
+Tuning tips:
+- Increase T_INITIAL or reduce COOLING_RATE to improve escaping local minima.
+- Increase MAX_ITER_PER_TEMP to allow more local search per temperature.
+- Use fixed seeds for reproducibility when comparing methods.
 
-```python
-# In main_with_viz.py
-VISUALIZATION_METHOD = 'matplotlib'
+---
 
-# Run
-python main_with_viz.py
+## Recommended output format
 
-# The program will:
-# 1. Run SA optimization
-# 2. Open matplotlib window with animation
-# 3. Continue when you close the window
+Save run summaries to JSON/CSV for later analysis. Example JSON schema:
+```json
+{
+  "optimizer": "ga",
+  "seed": 42,
+  "best_cost": 123.45,
+  "time_seconds": 12.3,
+  "evaluations": 3456,
+  "iterations": 200,
+  "best_solution": [ ... ],
+  "history": [ ... ]  // optional per-iteration best cost or population stats
+}
 ```
 
-### Workflow 3: Batch Processing (No Visualization)
+Have the runner write this file when `--out` is provided.
 
-```python
-# In main_with_viz.py
-VISUALIZATION_METHOD = 'none'
+---
 
-# Run
-python main_with_viz.py > results.txt
+## Compare GA vs SA — protocol
 
-# Perfect for:
-# - Running multiple experiments
-# - Automated testing
-# - Performance benchmarking
+1. Fix vehicle/config settings in `config.py`.
+2. Choose common seeds or a seed list.
+3. Run N repeats per optimizer (N >= 10 recommended).
+4. Save summaries (JSON) with history, time, and final cost.
+5. Compute metrics: best, mean, median, std, time-to-best.
+6. Plot convergence curves using the saved histories.
+
+
+
+Interpretation guide:
+- Use time-to-best and quality to judge practical performance.
+- Compare convergence curves for per-iteration or per-second performance.
+- Use statistical tests (e.g., Wilcoxon) if needed.
+
+---
+
+## Batch experiments and automation
+
+- Use 'none' visualization for batch runs.
+- Parallelize independent runs across cores or machines.
+- Save histories and final solutions to disk for offline plotting.
+
+Example CI-friendly run (single run):
+```bash
+python main_with_viz.py --optimizer ga --viz none --seed 123 --ga-pop 150 --ga-gen 300 --out results/ga_123.json
 ```
 
-## Configuration Details
+---
 
-### SA Parameters
+## Example: add CLI parsing to main_with_viz.py
 
-You can modify these at the top of `main_with_viz.py`:
+Patch suggestion (insert into `main_with_viz.py` near top and use parsed values later):
 
-```python
-T_INITIAL = 1000.0              # Initial temperature
-T_MIN = 1.0                     # Final temperature
-COOLING_RATE = 0.99             # Cooling rate (0.95-0.99)
-MAX_ITER_PER_TEMP = 20          # Iterations per temperature
-MAX_TOTAL_ITERATIONS = 100000   # Maximum total iterations
-```
 
-### Vehicle Configuration
-
-Edit `config.py` to change:
-- Vehicle list (`pi`)
-- Velocity ranges
-- Safety distances
-- Headway time (tau)
 
 ## Troubleshooting
 
-### "Could not import matplotlib visualization"
-- Install matplotlib: `pip install matplotlib`
-- Or switch to `VISUALIZATION_METHOD = 'web'`
-
-### "Could not import web visualization"
-- Install Flask: `pip install flask`
-- Ensure all web files exist:
-  - `visualization_server.py`
-  - `visualization_utils.py`
-  - `templates/intersection.html`
-
-### Web server won't start
-- Check if port 5000 is already in use
-- Try killing any existing Python processes
-- Change port in `visualization_utils.py` if needed
-
-### Animation too fast/slow (web version)
-- Edit `templates/intersection.html`
-- Modify `visualScale` values (lines ~388, ~458)
-- Modify stagger delay (line ~527)
-
-## Comparison Table
-
-| Feature | Matplotlib | Web | None |
-|---------|-----------|-----|------|
-| Visual Quality | High | Very High | N/A |
-| Interactivity | Low | High | N/A |
-| Performance | Medium | High | Highest |
-| Setup Complexity | Low | Medium | Lowest |
-| Remote Access | No | Yes | N/A |
-| Headless Support | No | Partial | Yes |
-| Best For | Analysis | Demos | Batch Jobs |
-
-## Advanced Usage
-
-### Custom Visualization Selection at Runtime
-
-You can modify the code to accept command-line arguments:
-
-```python
-# Add at top of main_with_viz.py
-import sys
-
-if len(sys.argv) > 1:
-    VISUALIZATION_METHOD = sys.argv[1]
-
-# Then run:
-python main_with_viz.py web
-python main_with_viz.py matplotlib
-python main_with_viz.py none
-```
-
-### Running Multiple Experiments
-
-```python
-# Create a batch script
-experiments = ['web', 'matplotlib', 'none']
-for viz_method in experiments:
-    VISUALIZATION_METHOD = viz_method
-    main()
-```
-
-## Support
-
-For issues or questions:
-1. Check this guide
-2. Review error messages in console
-3. Verify all dependencies are installed
-4. Check that required files exist
+- "Could not import matplotlib" — run `pip install matplotlib`.
+- "Could not import Flask" — run `pip install flask`.
+- Web server won't start — check port 5000 usage or change port in `visualization_utils.py`.
+- GA seems stuck — increase mutation or population, or add diversity (restart runs).
+- Ensure both GA and SA use the same evaluation function and constraints for fair comparison.
 
 ---
 
-**Last Updated:** October 23, 2025
+## Minimal sanity checks before experiments
+
+- Fix `RANDOM_SEED` or pass `--seed` for reproducibility.
+- Confirm `config.py` vehicle list and evaluation function are correct.
+- Verify output (JSON) contains `best_cost` and `history` if you need convergence curves.
+
+---
+
+## Support
+
+If problems persist:
+- Inspect console logs.
+- Confirm CLI arguments are parsed and applied.
+- Check that `ga.py` consumes GA params from `GA_PARAMS`.
+- Open an issue or attach run logs and sample JSON outputs.
+
+--- 
+
+End of README

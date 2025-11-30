@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from sa import run_sa
+from metahueristics.sa import run_sa
 from viz import IntersectionViz
 import config
-from geometry import Geometry
-from decoder import run_decoder
+from engine.geometry import Geometry
+from engine.decoder import run_decoder
 
 class SolutionAnalyzer:
     def __init__(self):
