@@ -33,11 +33,11 @@ from metahueristics.sa import evaluate_solution, validate_speeds
 # =============================================================================
 
 # --- Stage 1: Discrete DA (Permutation Optimization) ---
-DISCRETE_SWARM_SIZE = 30              # Number of dragonflies for permutation
+DISCRETE_SWARM_SIZE = 60              # Number of dragonflies for permutation
 DISCRETE_MAX_ITERATIONS = 150         # Iterations for Stage 1
 
 # --- Stage 2: Continuous DA (Speed Optimization) ---
-CONTINUOUS_SWARM_SIZE = 30            # Number of dragonflies for speeds
+CONTINUOUS_SWARM_SIZE = 60            # Number of dragonflies for speeds
 CONTINUOUS_MAX_ITERATIONS = 150       # Iterations for Stage 2
 
 # --- Common DA Parameters ---
@@ -1088,24 +1088,24 @@ class TwoStageDragonflyOptimizer:
         stage2_obj_dict = evaluate_solution(stage1_permutation, stage2_speeds, self.geom, self.tau_p_dict)
         stage2_actual_fitness = stage2_obj_dict['f']
         
-        # GLOBAL BEST: Compare Stage 1 and Stage 2, keep the better one
-        if stage1_actual_fitness < stage2_actual_fitness:
-            # Stage 1 solution is better
-            self.best_permutation = stage1_permutation
-            self.best_speeds = stage1_speeds
-            self.best_fitness = stage1_actual_fitness
-            self.best_obj_dict = stage1_obj_dict
-            if self.verbose:
-                print(f"  >> GLOBAL BEST from Stage 1: {self.best_fitness:.2f}")
-        else:
+        # # GLOBAL BEST: Compare Stage 1 and Stage 2, keep the better one
+        # if stage1_actual_fitness < stage2_actual_fitness:
+        #     # Stage 1 solution is better
+        #     self.best_permutation = stage1_permutation
+        #     self.best_speeds = stage1_speeds
+        #     self.best_fitness = stage1_actual_fitness
+        #     self.best_obj_dict = stage1_obj_dict
+        #     if self.verbose:
+        #         print(f"  >> GLOBAL BEST from Stage 1: {self.best_fitness:.2f}")
+        # else:
             # Stage 2 solution is better (or equal)
-            self.best_permutation = stage1_permutation
-            self.best_speeds = stage2_speeds
-            self.best_fitness = stage2_actual_fitness
-            self.best_obj_dict = stage2_obj_dict
-            if self.verbose:
-                print(f"  >> GLOBAL BEST from Stage 2: {self.best_fitness:.2f}")
-        
+        self.best_permutation = stage1_permutation
+        self.best_speeds = stage2_speeds
+        self.best_fitness = stage2_actual_fitness
+        self.best_obj_dict = stage2_obj_dict
+        if self.verbose:
+            print(f"  >> GLOBAL BEST from Stage 2: {self.best_fitness:.2f}")
+    
         #print(f"[DEBUG] MAIN OPTIMIZE - Final evaluation complete: f={self.best_obj_dict.get('f', 0):.2f}")
         
         # Calculate runtime
