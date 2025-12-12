@@ -47,8 +47,8 @@ WEIGHT_ALIGNMENT = 2.0                # a: Alignment weight
 WEIGHT_COHESION = 2.0                 # c: Cohesion weight
 WEIGHT_FOOD = 1.0                     # f: Food attraction weight
 WEIGHT_ENEMY = 1.0                    # e: Enemy repulsion weight
-WEIGHT_INERTIA = 0.9                  # w: Inertia weight (decreases over time)
-INERTIA_MIN = 0.4                     # Minimum inertia weight
+WEIGHT_INERTIA = 0.5                  # w: Inertia weight (decreases over time) - REDUCED to prevent explosion
+INERTIA_MIN = 0.1                     # Minimum inertia weight - REDUCED to prevent explosion
 
 # Neighborhood parameters
 NEIGHBOR_RADIUS = 0.3                 # Radius for finding neighbors (fraction of swarm)
@@ -56,6 +56,9 @@ NEIGHBOR_RADIUS = 0.3                 # Radius for finding neighbors (fraction o
 # Local search parameters (Stage 1 only)
 LOCAL_SEARCH_PROB = 0.3               # Probability of applying local search
 LOCAL_SEARCH_ITERATIONS = 10          # Number of local search iterations
+
+# Velocity control parameters (to prevent exponential growth)
+MAX_VELOCITY_LENGTH = 100             # Maximum number of swaps in velocity
 
 
 # =============================================================================
@@ -251,19 +254,37 @@ class DiscreteDragonfly:
                             weights['f'], weights['e'], weights['w'])
         
         # Scale each component by its weight
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Scaling sequences...")
         scaled_S = scale_swap_sequence(separation, s)
         scaled_A = scale_swap_sequence(alignment, a)
         scaled_C = scale_swap_sequence(cohesion, c)
         scaled_F = scale_swap_sequence(food, f)
         scaled_E = scale_swap_sequence(enemy, e)
         scaled_inertia = scale_swap_sequence(self.velocity, w)
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Scaled lengths - S:{len(scaled_S)}, A:{len(scaled_A)}, C:{len(scaled_C)}, F:{len(scaled_F)}, E:{len(scaled_E)}, Inertia:{len(scaled_inertia)}")
         
         # Merge all components (⊕ operator)
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merging S+A...")
         new_velocity = merge_swap_sequences(scaled_S, scaled_A)
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merged S+A, length={len(new_velocity)}")
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merging +C...")
         new_velocity = merge_swap_sequences(new_velocity, scaled_C)
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merged +C, length={len(new_velocity)}")
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merging +F...")
         new_velocity = merge_swap_sequences(new_velocity, scaled_F)
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merged +F, length={len(new_velocity)}")
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merging +E...")
         new_velocity = merge_swap_sequences(new_velocity, scaled_E)
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merged +E, length={len(new_velocity)}")
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Merging +Inertia (length={len(scaled_inertia)})...")
         new_velocity = merge_swap_sequences(new_velocity, scaled_inertia)
+        # print(f"[DEBUG-VELOCITY] DF {self.id}: Final velocity length={len(new_velocity)}")
+        
+        # CRITICAL FIX: Limit velocity length to prevent exponential growth
+        if len(new_velocity) > MAX_VELOCITY_LENGTH:
+            # Randomly sample swaps to keep velocity bounded
+            new_velocity = random.sample(new_velocity, MAX_VELOCITY_LENGTH)
+            # print(f"[DEBUG-VELOCITY] DF {self.id}: Velocity limited to {MAX_VELOCITY_LENGTH} swaps")
         
         self.velocity = new_velocity
     
@@ -799,18 +820,26 @@ class TwoStageDragonflyOptimizer:
             print("="*70 + "\n")
         
         # Initialize swarm
+        #print("[DEBUG] Stage 1 - Step 1: Initializing discrete swarm...")
         swarm = [DiscreteDragonfly(i, self.all_vehicles) for i in range(DISCRETE_SWARM_SIZE)]
+        #print(f"[DEBUG] Stage 1 - Step 1: Created {len(swarm)} discrete dragonflies")
         
         # Evaluate initial swarm
+        #print("[DEBUG] Stage 1 - Step 2: Evaluating initial swarm...")
         for df in swarm:
             df.evaluate(self.geom, self.tau_p_dict)
+        #print("[DEBUG] Stage 1 - Step 2: Initial swarm evaluation complete")
         
         # Track best and worst (food and enemy)
-        food = min(swarm, key=lambda df: df.fitness)  # Best dragonfly
-        enemy = max(swarm, key=lambda df: df.fitness)  # Worst dragonfly
+        #print("[DEBUG] Stage 1 - Step 3: Identifying food (best) and enemy (worst)...")
+        food = copy.deepcopy(min(swarm, key=lambda df: df.fitness))  # Best dragonfly (deep copy)
+        enemy = copy.deepcopy(max(swarm, key=lambda df: df.fitness))  # Worst dragonfly (deep copy)
+        #print(f"[DEBUG] Stage 1 - Step 3: Food fitness = {food.fitness:.2f}, Enemy fitness = {enemy.fitness:.2f}")
         
         # Main optimization loop
+        #print("[DEBUG] Stage 1 - Step 4: Starting main optimization loop...")
         for iteration in range(DISCRETE_MAX_ITERATIONS):
+            
             # Update inertia weight (linearly decrease)
             w = WEIGHT_INERTIA - (WEIGHT_INERTIA - INERTIA_MIN) * (iteration / DISCRETE_MAX_ITERATIONS)
             
@@ -825,6 +854,7 @@ class TwoStageDragonflyOptimizer:
             
             # Update each dragonfly
             for idx, df in enumerate(swarm):
+                
                 # Find neighbors
                 neighbor_indices = calculate_neighbors(swarm, idx, NEIGHBOR_RADIUS)
                 neighbors = [swarm[i] for i in neighbor_indices]
@@ -838,32 +868,42 @@ class TwoStageDragonflyOptimizer:
                     separation = alignment = cohesion = []
                 
                 # Calculate food and enemy attraction/repulsion
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Calculating food attraction...")
                 food_attraction = calculate_swap_sequence(df.position, food.position)
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Calculating enemy repulsion...")
                 enemy_repulsion = calculate_swap_sequence(enemy.position, df.position)
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Food/Enemy calculated (F:{len(food_attraction)}, E:{len(enemy_repulsion)})")
                 
                 # Update velocity
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Updating velocity...")
                 df.update_velocity(separation, alignment, cohesion, 
                                  food_attraction, enemy_repulsion, weights)
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Velocity updated (new velocity length: {len(df.velocity)})")
                 
                 # Update position
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Updating position...")
                 df.update_position()
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Position updated")
                 
                 # Evaluate new position
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Evaluating fitness...")
                 df.evaluate(self.geom, self.tau_p_dict)
+                #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Fitness = {df.fitness:.2f}")
                 
                 # Local search with probability
                 if random.random() < LOCAL_SEARCH_PROB:
+                    #print(f"[DEBUG-DETAIL] Iter {iteration+1}, DF {idx}: Applying local search...")
                     steepest_ascent_hill_climbing(df, self.geom, self.tau_p_dict, 
                                                  LOCAL_SEARCH_ITERATIONS)
             
             # Update food and enemy
             current_best = min(swarm, key=lambda df: df.fitness)
             if current_best.fitness < food.fitness:
-                food = current_best
+                food = copy.deepcopy(current_best)  # Deep copy to preserve best solution
                 if self.verbose:
                     print(f"  Iter {iteration+1}: NEW BEST = {food.fitness:.2f}")
             
-            enemy = max(swarm, key=lambda df: df.fitness)
+            enemy = copy.deepcopy(max(swarm, key=lambda df: df.fitness))  # Update enemy (deep copy)
             
             # Record history
             all_fitness = [df.fitness for df in swarm if df.fitness < math.inf]
@@ -885,7 +925,6 @@ class TwoStageDragonflyOptimizer:
         if self.verbose:
             print(f"\n  Stage 1 Complete: Best Permutation Cost = {food.fitness:.2f}")
             print(f"  Best Permutation (IDs): {[v.id for v in food.position]}\n")
-        
         return food.position, food.fitness
     
     def optimize_speeds(self, fixed_permutation: List[Vehicle]) -> Tuple[List[float], float]:
@@ -916,17 +955,24 @@ class TwoStageDragonflyOptimizer:
         # Initialize swarm
         swarm = [ContinuousDragonfly(i, num_vehicles, v_min, v_max) 
                 for i in range(CONTINUOUS_SWARM_SIZE)]
+        #print(f"[DEBUG] Stage 2 - Step 1: Created {len(swarm)} continuous dragonflies")
         
         # Evaluate initial swarm
+        #print("[DEBUG] Stage 2 - Step 2: Evaluating initial swarm...")
         for df in swarm:
             df.evaluate(fixed_permutation, self.geom, self.tau_p_dict)
+        #print("[DEBUG] Stage 2 - Step 2: Initial swarm evaluation complete")
         
         # Track best and worst (food and enemy)
-        food = min(swarm, key=lambda df: df.fitness)
-        enemy = max(swarm, key=lambda df: df.fitness)
+        #print("[DEBUG] Stage 2 - Step 3: Identifying food (best) and enemy (worst)...")
+        food = copy.deepcopy(min(swarm, key=lambda df: df.fitness))  # Best dragonfly (deep copy)
+        enemy = copy.deepcopy(max(swarm, key=lambda df: df.fitness))  # Worst dragonfly (deep copy)
+        #print(f"[DEBUG] Stage 2 - Step 3: Food fitness = {food.fitness:.2f}, Enemy fitness = {enemy.fitness:.2f}")
         
         # Main optimization loop
+        #print("[DEBUG] Stage 2 - Step 4: Starting main optimization loop...")
         for iteration in range(CONTINUOUS_MAX_ITERATIONS):
+            
             # Update inertia weight (linearly decrease)
             w = WEIGHT_INERTIA - (WEIGHT_INERTIA - INERTIA_MIN) * (iteration / CONTINUOUS_MAX_ITERATIONS)
             
@@ -972,11 +1018,11 @@ class TwoStageDragonflyOptimizer:
             # Update food and enemy
             current_best = min(swarm, key=lambda df: df.fitness)
             if current_best.fitness < food.fitness:
-                food = current_best
+                food = copy.deepcopy(current_best)  # Deep copy to preserve best solution
                 if self.verbose:
                     print(f"  Iter {iteration+1}: NEW BEST = {food.fitness:.2f}")
             
-            enemy = max(swarm, key=lambda df: df.fitness)
+            enemy = copy.deepcopy(max(swarm, key=lambda df: df.fitness))  # Update enemy (deep copy)
             
             # Record history
             all_fitness = [df.fitness for df in swarm if df.fitness < math.inf]
@@ -995,10 +1041,12 @@ class TwoStageDragonflyOptimizer:
                 print(f"  Iter {iteration+1}/{CONTINUOUS_MAX_ITERATIONS}: "
                       f"Best = {food.fitness:.2f}, Avg = {avg_fitness:.2f}")
         
+        #print("[DEBUG] Stage 2 - Step 5: Optimization loop complete")
         if self.verbose:
             print(f"\n  Stage 2 Complete: Best Speed Cost = {food.fitness:.2f}")
             print(f"  Best Speeds: {[f'{s:.2f}' for s in food.position]}\n")
         
+        #print(f"[DEBUG] Stage 2 - COMPLETE: Returning best speeds with fitness {food.fitness:.2f}")
         return food.position.tolist(), food.fitness
     
     def optimize(self) -> Tuple[List[Vehicle], List[float], float, Dict]:
@@ -1009,32 +1057,43 @@ class TwoStageDragonflyOptimizer:
         --------
         Tuple : (best_permutation, best_speeds, best_fitness, results_dict)
         """
+        #print("[DEBUG] MAIN OPTIMIZE - Starting two-stage optimization...")
         start_time = datetime.now()
         
         # Initialize visualizer if requested
         if self.visualize:
+            #print("[DEBUG] MAIN OPTIMIZE - Initializing visualizer...")
             self.visualizer = DragonflyVisualizer(two_stage=True)
         
         # Stage 1: Optimize permutation
+        #print("[DEBUG] MAIN OPTIMIZE - Calling Stage 1 (optimize_permutation)...")
         self.best_permutation, stage1_fitness = self.optimize_permutation()
+        #print(f"[DEBUG] MAIN OPTIMIZE - Stage 1 returned with fitness: {stage1_fitness:.2f}")
         
         # Stage 2: Optimize speeds with fixed permutation
+        #print("[DEBUG] MAIN OPTIMIZE - Calling Stage 2 (optimize_speeds)...")
         self.best_speeds, self.best_fitness = self.optimize_speeds(self.best_permutation)
+        #print(f"[DEBUG] MAIN OPTIMIZE - Stage 2 returned with fitness: {self.best_fitness:.2f}")
         
         # Get detailed objective breakdown
+        #print("[DEBUG] MAIN OPTIMIZE - Evaluating final solution for detailed breakdown...")
         self.best_obj_dict = evaluate_solution(self.best_permutation, self.best_speeds, 
                                               self.geom, self.tau_p_dict)
+        #print(f"[DEBUG] MAIN OPTIMIZE - Final evaluation complete: f={self.best_obj_dict.get('f', 0):.2f}")
         
         # Calculate runtime
         end_time = datetime.now()
         runtime_seconds = (end_time - start_time).total_seconds()
+        #print(f"[DEBUG] MAIN OPTIMIZE - Total runtime: {runtime_seconds:.2f} seconds")
         
         # Close visualizer
         if self.visualizer:
+            #print("[DEBUG] MAIN OPTIMIZE - Closing visualizer...")
             self.visualizer.close()
         
         # Save CSV logs if requested
         if self.log_to_csv:
+            #print("[DEBUG] MAIN OPTIMIZE - Saving CSV logs...")
             # Combine iteration data from both stages
             stage1_iter_data = []
             for i in range(len(self.stage1_history['best'])):
@@ -1099,6 +1158,7 @@ class TwoStageDragonflyOptimizer:
                 print(f"    - {self.csv_prefix}_summary.csv")
         
         # Prepare results
+        #print("[DEBUG] MAIN OPTIMIZE - Preparing final results dictionary...")
         results = {
             'best_permutation': self.best_permutation,
             'best_speeds': self.best_speeds,
@@ -1123,6 +1183,7 @@ class TwoStageDragonflyOptimizer:
             print(f"  Runtime:               {runtime_seconds:.2f} seconds")
             print("="*70 + "\n")
         
+        #print("[DEBUG] MAIN OPTIMIZE - COMPLETE: Returning final results")
         return self.best_permutation, self.best_speeds, self.best_fitness, results
     
 
