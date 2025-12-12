@@ -3,7 +3,7 @@ import random
 from engine.vehicle import Vehicle  # Import the Vehicle class from vehicle.py
 
 # --- Tunable Config Parameters, this is the enviroment setup ---
-velocity_range = (6,18)  # Minimum and maximum velocity for all vehicles
+velocity_range = (10,18)  # Minimum and maximum velocity for all vehicles
 avg_velocity = sum(velocity_range) / 2  # Average velocity for reference
 avg_vehicle_length = 4.5  # Average vehicle length (in meters)
 tau = avg_vehicle_length/avg_velocity   # Headway time (in seconds)
@@ -16,7 +16,7 @@ inter_conflict_distance = 5  # Distance between conflict points (in meters)
 # --- Constraint Allowance ---
 speed_penalty_coeff = 0.05   # penalize solutions with speeds far from v_max
 # conflict_weight = 0.0  # penalize conflicts in objective function
-follow_slack= 0.0  # Additional slack time for following vehicles (in seconds), this allows more flexibilty for constraint C0
+follow_slack = 0.1  # Additional slack for following vehicles (in m/s)
 
 
 pi = [

@@ -120,6 +120,14 @@ except ImportError as e:
     print("  'HYBRID', 'HYBRID_ANALYSIS' modes will not be available.")
     HYBRID_IMPORTED = False
 
+try:
+    from metahueristics.dragonfly import TwoStageDragonflyOptimizer
+    DA_IMPORTED = True
+except ImportError as e:
+    print(f"WARNING: Could not import dragonfly.py: {e}")
+    print("  'DA', 'DA_ANALYSIS' modes will not be available.")
+    DA_IMPORTED = False
+
 
 # =============================================================================
 # CONFIGURATION
@@ -130,13 +138,15 @@ except ImportError as e:
 # 'ACO':         Single run of ACO (uses aco.NUM_ITERATIONS).
 # 'PSO':         Single run of PSO (uses pso.NUM_ITERATIONS).
 # 'HYBRID':      Single run of Hybrid ACO+PSO (uses ACO and PSO iterations).
+# 'DA':          Single run of Dragonfly Algorithm (two-stage: permutation + speeds).
 # 'SA_ANALYSIS': N-run statistical analysis of SA (natural stop).
 # 'GA_ANALYSIS': N-run statistical analysis of GA (natural stop).
 # 'ACO_ANALYSIS': N-run statistical analysis of ACO (natural stop).
 # 'PSO_ANALYSIS': N-run statistical analysis of PSO (natural stop).
+# 'DA_ANALYSIS': N-run statistical analysis of DA (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. Hybrid (natural stops).
-OPTIMIZATION_ALGORITHM = 'GA'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'BOTH', 'EXPERIMENT'
+OPTIMIZATION_ALGORITHM = 'DA'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -206,13 +216,28 @@ else:
     PSO_C1 = 1.4
     PSO_C2 = 1.4
     PSO_CONVERGENCE_PATIENCE = 20
+
+# DA Parameters (used for 'DA' and 'DA_ANALYSIS')
+if DA_IMPORTED:
+    from metahueristics.dragonfly import (
+        DISCRETE_SWARM_SIZE, DISCRETE_MAX_ITERATIONS,
+        CONTINUOUS_SWARM_SIZE, CONTINUOUS_MAX_ITERATIONS,
+        MAX_VELOCITY_LENGTH
+    )
+else:
+    # Default values if DA not imported, to prevent errors
+    DISCRETE_SWARM_SIZE = 10
+    DISCRETE_MAX_ITERATIONS = 150
+    CONTINUOUS_SWARM_SIZE = 10
+    CONTINUOUS_MAX_ITERATIONS = 150
+    MAX_VELOCITY_LENGTH = 100
 # =============================================================================
 
 
 # --- Conditional Imports Based on Visualization Method ---
 animation_enabled = False
 web_viz_enabled = False
-is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS')
+is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS', 'DA_ANALYSIS')
 
 if not is_analysis_mode and VISUALIZATION_METHOD == 'matplotlib':
     try:
@@ -897,6 +922,43 @@ def main():
         
         print("\nDisplaying Sequential Hybrid performance plots...")
         plot_sequential_hybrid_dashboard(hybrid_history, aco_iters, pso_iters)
+        
+        print("  (Close all plot windows to continue to animation)")
+        if animation_enabled:
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+        elif web_viz_enabled:
+            visualize_web(perm_best, speeds_best)
+
+    # --- Run Dragonfly Algorithm (Single Run) ---
+    elif OPTIMIZATION_ALGORITHM == 'DA':
+        if not DA_IMPORTED:
+            print("ERROR: DA algorithm selected but dragonfly.py could not be imported.")
+            return
+            
+        print("\n" + "="*70)
+        print("RUNNING DRAGONFLY ALGORITHM (Two-Stage)")
+        print("="*70)
+        
+        # Initialize geometry
+        geom = Geometry()
+        all_vehicles = config.pi
+        geom.create_entry_queue(all_vehicles)
+        for v in all_vehicles:
+            geom.set_trajectory(v)
+        all_points = set().union(*(v.path for v in all_vehicles if v.path))
+        tau_p_dict = {p: config.tau for p in all_points}
+        
+        # Run DA optimizer
+        optimizer = TwoStageDragonflyOptimizer(verbose=True, visualize=False, log_to_csv=True, csv_prefix="da_run")
+        perm_best, speeds_best, obj_best, results = optimizer.optimize()
+        
+        print("\n" + "="*70)
+        print("DRAGONFLY ALGORITHM RESULTS")
+        print("="*70)
+        print(f"  Best Objective:     {obj_best:.2f}")
+        print(f"  Best Permutation:   {[v.id for v in perm_best]}")
+        print(f"  Best Speeds:        {[f'{s:.2f}' for s in speeds_best]}")
+        print("="*70)
         
         print("  (Close all plot windows to continue to animation)")
         if animation_enabled:

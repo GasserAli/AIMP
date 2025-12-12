@@ -1067,18 +1067,45 @@ class TwoStageDragonflyOptimizer:
         
         # Stage 1: Optimize permutation
         #print("[DEBUG] MAIN OPTIMIZE - Calling Stage 1 (optimize_permutation)...")
-        self.best_permutation, stage1_fitness = self.optimize_permutation()
+        stage1_permutation, stage1_fitness = self.optimize_permutation()
         #print(f"[DEBUG] MAIN OPTIMIZE - Stage 1 returned with fitness: {stage1_fitness:.2f}")
+        
+        # Evaluate Stage 1 solution with its proxy speeds for global comparison
+        stage1_speeds = _assign_speeds_deterministic(stage1_permutation, self.geom)
+        stage1_speeds = validate_speeds(stage1_permutation, stage1_speeds, self.geom)
+        stage1_obj_dict = evaluate_solution(stage1_permutation, stage1_speeds, self.geom, self.tau_p_dict)
+        stage1_actual_fitness = stage1_obj_dict['f']
+        
+        if self.verbose:
+            print(f"\n  Stage 1 Actual Fitness (with proxy speeds): {stage1_actual_fitness:.2f}")
         
         # Stage 2: Optimize speeds with fixed permutation
         #print("[DEBUG] MAIN OPTIMIZE - Calling Stage 2 (optimize_speeds)...")
-        self.best_speeds, self.best_fitness = self.optimize_speeds(self.best_permutation)
-        #print(f"[DEBUG] MAIN OPTIMIZE - Stage 2 returned with fitness: {self.best_fitness:.2f}")
+        stage2_speeds, stage2_fitness = self.optimize_speeds(stage1_permutation)
+        #print(f"[DEBUG] MAIN OPTIMIZE - Stage 2 returned with fitness: {stage2_fitness:.2f}")
         
-        # Get detailed objective breakdown
-        #print("[DEBUG] MAIN OPTIMIZE - Evaluating final solution for detailed breakdown...")
-        self.best_obj_dict = evaluate_solution(self.best_permutation, self.best_speeds, 
-                                              self.geom, self.tau_p_dict)
+        # Evaluate Stage 2 solution
+        stage2_obj_dict = evaluate_solution(stage1_permutation, stage2_speeds, self.geom, self.tau_p_dict)
+        stage2_actual_fitness = stage2_obj_dict['f']
+        
+        # GLOBAL BEST: Compare Stage 1 and Stage 2, keep the better one
+        if stage1_actual_fitness < stage2_actual_fitness:
+            # Stage 1 solution is better
+            self.best_permutation = stage1_permutation
+            self.best_speeds = stage1_speeds
+            self.best_fitness = stage1_actual_fitness
+            self.best_obj_dict = stage1_obj_dict
+            if self.verbose:
+                print(f"  >> GLOBAL BEST from Stage 1: {self.best_fitness:.2f}")
+        else:
+            # Stage 2 solution is better (or equal)
+            self.best_permutation = stage1_permutation
+            self.best_speeds = stage2_speeds
+            self.best_fitness = stage2_actual_fitness
+            self.best_obj_dict = stage2_obj_dict
+            if self.verbose:
+                print(f"  >> GLOBAL BEST from Stage 2: {self.best_fitness:.2f}")
+        
         #print(f"[DEBUG] MAIN OPTIMIZE - Final evaluation complete: f={self.best_obj_dict.get('f', 0):.2f}")
         
         # Calculate runtime
@@ -1163,8 +1190,9 @@ class TwoStageDragonflyOptimizer:
             'best_permutation': self.best_permutation,
             'best_speeds': self.best_speeds,
             'best_fitness': self.best_fitness,
-            'stage1_fitness': stage1_fitness,
-            'stage2_fitness': self.best_fitness,
+            'stage1_proxy_fitness': stage1_fitness,
+            'stage1_actual_fitness': stage1_actual_fitness,
+            'stage2_fitness': stage2_actual_fitness,
             'obj_dict': self.best_obj_dict,
             'stage1_history': self.stage1_history,
             'stage2_history': self.stage2_history,
@@ -1176,11 +1204,13 @@ class TwoStageDragonflyOptimizer:
             print("\n" + "="*70)
             print("TWO-STAGE DRAGONFLY ALGORITHM COMPLETE")
             print("="*70)
-            print(f"  Stage 1 Best (Proxy):  {stage1_fitness:.2f}")
-            print(f"  Stage 2 Best (Final):  {self.best_fitness:.2f}")
-            print(f"  Emergency Delay:       {self.best_obj_dict.get('fem', 0):.2f}")
-            print(f"  Total Delay:           {self.best_obj_dict.get('fall', 0):.2f}")
-            print(f"  Runtime:               {runtime_seconds:.2f} seconds")
+            print(f"  Stage 1 Best (Proxy):       {stage1_fitness:.2f}")
+            print(f"  Stage 1 Best (Actual):      {stage1_actual_fitness:.2f}")
+            print(f"  Stage 2 Best (Optimized):   {stage2_actual_fitness:.2f}")
+            print(f"  >> GLOBAL BEST:             {self.best_fitness:.2f}")
+            print(f"  Emergency Delay:            {self.best_obj_dict.get('fem', 0):.2f}")
+            print(f"  Total Delay:                {self.best_obj_dict.get('fall', 0):.2f}")
+            print(f"  Runtime:                    {runtime_seconds:.2f} seconds")
             print("="*70 + "\n")
         
         #print("[DEBUG] MAIN OPTIMIZE - COMPLETE: Returning final results")
@@ -1205,4 +1235,4 @@ if __name__ == "__main__":
     print(f"Objective: {best_fitness:.2f}")
     
     # Keep plots open
-    input("\nPress Enter to close plots and exit...")
+    # input("\nPress Enter to close plots and exit...")
