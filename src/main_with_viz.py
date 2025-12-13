@@ -146,7 +146,7 @@ except ImportError as e:
 # 'DA_ANALYSIS': N-run statistical analysis of DA (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. Hybrid (natural stops).
-OPTIMIZATION_ALGORITHM = 'DA'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT'
+OPTIMIZATION_ALGORITHM = 'DA_ANALYSIS'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -766,7 +766,7 @@ def save_experiment_summary(timestamp, all_stats):
         print(f"  ERROR: Could not save summary CSV. {e}")
 
 
-def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_evals=None, ga_evals=None, aco_results=None, aco_evals=None, pso_results=None, pso_evals=None, hybrid_results=None, hybrid_evals=None):
+def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_evals=None, ga_evals=None, aco_results=None, aco_evals=None, pso_results=None, pso_evals=None, hybrid_results=None, hybrid_evals=None, da_results=None, da_evals=None):
     """
     Saves the raw final cost AND evals from every single run to a SINGLE master CSV file.
     Appends the new runs; creates header if file doesn't exist.
@@ -776,8 +776,8 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_eva
         with open(RAW_FILENAME, mode='a', newline='') as f:
             writer = csv.writer(f)
             if not file_exists:
-                # --- MODIFIED: Added ACO, PSO, and HYBRID columns ---
-                writer.writerow(['Experiment_Timestamp', 'Run', 'SA_Final_Cost', 'SA_Evals', 'GA_Final_Cost', 'GA_Evals', 'ACO_Final_Cost', 'ACO_Evals', 'PSO_Final_Cost', 'PSO_Evals', 'HYBRID_Final_Cost', 'HYBRID_Evals'])
+                # --- MODIFIED: Added ACO, PSO, HYBRID, and DA columns ---
+                writer.writerow(['Experiment_Timestamp', 'Run', 'SA_Final_Cost', 'SA_Evals', 'GA_Final_Cost', 'GA_Evals', 'ACO_Final_Cost', 'ACO_Evals', 'PSO_Final_Cost', 'PSO_Evals', 'HYBRID_Final_Cost', 'HYBRID_Evals', 'DA_Final_Cost', 'DA_Evals'])
             
             # Determine max number of runs
             num_runs = 0
@@ -786,6 +786,7 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_eva
             if aco_results: num_runs = max(num_runs, len(aco_results))
             if pso_results: num_runs = max(num_runs, len(pso_results))
             if hybrid_results: num_runs = max(num_runs, len(hybrid_results))
+            if da_results: num_runs = max(num_runs, len(da_results))
             
             for i in range(num_runs):
                 sa_val = sa_results[i] if sa_results and i < len(sa_results) else 'N/A'
@@ -798,8 +799,10 @@ def save_experiment_raw_data(timestamp, sa_results=None, ga_results=None, sa_eva
                 pso_ev = pso_evals[i] if pso_evals and i < len(pso_evals) else 'N/A'
                 hybrid_val = hybrid_results[i] if hybrid_results and i < len(hybrid_results) else 'N/A'
                 hybrid_ev = hybrid_evals[i] if hybrid_evals and i < len(hybrid_evals) else 'N/A'
-                # --- MODIFIED: Write all data points including ACO, PSO, and HYBRID ---
-                writer.writerow([timestamp, i+1, sa_val, sa_ev, ga_val, ga_ev, aco_val, aco_ev, pso_val, pso_ev, hybrid_val, hybrid_ev])
+                da_val = da_results[i] if da_results and i < len(da_results) else 'N/A'
+                da_ev = da_evals[i] if da_evals and i < len(da_evals) else 'N/A'
+                # --- MODIFIED: Write all data points including ACO, PSO, HYBRID, and DA ---
+                writer.writerow([timestamp, i+1, sa_val, sa_ev, ga_val, ga_ev, aco_val, aco_ev, pso_val, pso_ev, hybrid_val, hybrid_ev, da_val, da_ev])
                     
         print(f"  Successfully appended raw data to: {RAW_FILENAME}")
     except IOError as e:
@@ -1008,7 +1011,7 @@ def main():
             traceback.print_exc()
 
     # --- MODIFICATION: Split Experiment logic for "Natural Run" ---
-    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS'):
+    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS', 'DA_ANALYSIS'):
         print("\n--- PREPARING EXPERIMENT (NATURAL RUN) ---")
         print(f"Running {NUM_EXPERIMENT_RUNS} times for selected algorithm(s).")
         
@@ -1238,6 +1241,55 @@ def main():
                     'best': hybrid_best_obj_overall,
                     'avg_evals': np.mean(hybrid_evals_list)
                 }
+        if OPTIMIZATION_ALGORITHM == 'DA_ANALYSIS':
+            if not DA_IMPORTED:
+                print("WARNING: DA selected but da.py not imported. Skipping DA.")
+            else:
+                # Initialize DA result tracking variables
+                da_results = []
+                da_evals_list = []
+                da_best_obj_overall = math.inf
+                da_best_history_overall = {}
+                
+                print("\n" + "="*70)
+                print(f"RUNNING DA EXPERIMENT ({NUM_EXPERIMENT_RUNS} runs)...")
+                print("="*70)
+                start_time_da = time.time()
+                
+                for i in range(NUM_EXPERIMENT_RUNS):
+                    print(f"  DA Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
+                    
+                    # Create a new optimizer instance for each run
+                    optimizer = TwoStageDragonflyOptimizer(verbose=False, visualize=False, log_to_csv=False)
+                    
+                    # optimize() returns: (best_permutation, best_speeds, best_fitness, results_dict)
+                    da_perm, da_speeds, da_obj, da_results_dict = optimizer.optimize()
+                    
+                    # Extract total evaluations from results_dict or calculate from parameters
+                    da_evals = (DISCRETE_SWARM_SIZE * DISCRETE_MAX_ITERATIONS + 
+                               CONTINUOUS_SWARM_SIZE * CONTINUOUS_MAX_ITERATIONS)
+                    
+                    print(f"    ...Run {i+1} Best: {da_obj:.2f} (in {da_evals} evals)")
+                    da_results.append(da_obj)
+                    da_evals_list.append(da_evals)
+                    
+                    if da_obj < da_best_obj_overall:
+                        da_best_obj_overall = da_obj
+                        # Store both stage histories from results_dict
+                        da_best_history_overall = {
+                            'stage1': da_results_dict.get('stage1_history', {}),
+                            'stage2': da_results_dict.get('stage2_history', {})
+                        }
+                
+                end_time_da = time.time()
+                
+                all_stats['DA'] = {
+                    'mean': np.mean(da_results),
+                    'std': np.std(da_results),
+                    'time': (end_time_da - start_time_da) / NUM_EXPERIMENT_RUNS,
+                    'best': da_best_obj_overall,
+                    'avg_evals': np.mean(da_evals_list)
+                }
         
         # 8. Calculate and Print Statistics
         print("\n" + "="*70)
@@ -1290,6 +1342,15 @@ def main():
             print(f"  Avg. Run Time (sec):   {stats['time']:.3f}")
             print(f"  Best Cost (Overall):   {stats['best']:.2f}")
         
+        if 'DA' in all_stats:
+            stats = all_stats['DA']
+            print("--- Dragonfly Algorithm (DA) ---")
+            print(f"  Avg. Evals Used:     {stats['avg_evals']:.1f}")
+            print(f"  Mean (Avg. Best Cost): {stats['mean']:.2f}")
+            print(f"  Std. Deviation (Cost): {stats['std']:.2f}")
+            print(f"  Avg. Run Time (sec):   {stats['time']:.3f}")
+            print(f"  Best Cost (Overall):   {stats['best']:.2f}")
+        
         print("="*70)
         
         # Determine winner based on mean performance
@@ -1319,6 +1380,8 @@ def main():
             save_experiment_raw_data(experiment_timestamp, pso_results=pso_results, pso_evals=pso_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'HYBRID_ANALYSIS':
             save_experiment_raw_data(experiment_timestamp, hybrid_results=hybrid_results, hybrid_evals=hybrid_evals_list)
+        elif OPTIMIZATION_ALGORITHM == 'DA_ANALYSIS':
+            save_experiment_raw_data(experiment_timestamp, da_results=da_results, da_evals=da_evals_list)
         # --- END FIX ---
         
         # 8. Show All Plots
@@ -1404,6 +1467,11 @@ def main():
             plot_experiment_distribution([pso_results], ['PSO'], ['purple'])
             print("  Displaying performance dashboard for the BEST PSO run...")
             plot_pso_performance_dashboard(pso_best_history_overall)
+        
+        elif OPTIMIZATION_ALGORITHM == 'DA_ANALYSIS':
+            plot_experiment_results([da_results], ['DA'])
+            plot_experiment_distribution([da_results], ['DA'], ['orange'])
+            print("  Note: DA uses a two-stage approach. Detailed stage-by-stage plots are available in individual runs.")
         
         print("  (All plots displayed)")
 
