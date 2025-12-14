@@ -33,12 +33,12 @@ from metahueristics.sa import evaluate_solution, validate_speeds
 # =============================================================================
 
 # --- Stage 1: Discrete DA (Permutation Optimization) ---
-DISCRETE_SWARM_SIZE = 60              # Number of dragonflies for permutation
-DISCRETE_MAX_ITERATIONS = 150         # Iterations for Stage 1
+DISCRETE_SWARM_SIZE = 50              # Number of dragonflies for permutation
+DISCRETE_MAX_ITERATIONS = 100         # Iterations for Stage 1
 
 # --- Stage 2: Continuous DA (Speed Optimization) ---
-CONTINUOUS_SWARM_SIZE = 60            # Number of dragonflies for speeds
-CONTINUOUS_MAX_ITERATIONS = 150       # Iterations for Stage 2
+CONTINUOUS_SWARM_SIZE = 50            # Number of dragonflies for speeds
+CONTINUOUS_MAX_ITERATIONS = 100       # Iterations for Stage 2
 
 # --- Common DA Parameters ---
 # Weights for swarm behaviors (typical range: 0.1 - 2.0)

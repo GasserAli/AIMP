@@ -147,7 +147,7 @@ except ImportError as e:
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. Hybrid (natural stops).
 # 'COMPARE_ALL': N-run statistical comparison of GA, SA, HYBRID, and DA (natural stops).
-OPTIMIZATION_ALGORITHM = 'DA'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT', 'COMPARE_ALL'
+OPTIMIZATION_ALGORITHM = 'COMPARE_ALL'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT', 'COMPARE_ALL'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -158,7 +158,7 @@ VISUALIZATION_METHOD = 'matplotlib'  # 'matplotlib', 'web', 'none'
 # Budget for *direct comparison modes only* ('BOTH')
 COMPARISON_EVALUATION_BUDGET = 5000 
 # Number of runs for 'SA_ANALYSIS', 'GA_ANALYSIS', 'EXPERIMENT'
-NUM_EXPERIMENT_RUNS = 10  # 
+NUM_EXPERIMENT_RUNS = 5  # 
 RANDOM_SEED = 42 
 
 # SA Parameters (used for 'SA' and 'SA_ANALYSIS')
@@ -670,6 +670,394 @@ def plot_experiment_distribution(results_data, labels, colors):
 
 
 # =============================================================================
+# COMPREHENSIVE COMPARISON PLOTTING FUNCTION (NEW)
+# =============================================================================
+
+def plot_comprehensive_comparison(all_stats, sa_results, ga_results, hybrid_results, da_results,
+                                  sa_best_history, ga_best_history, hybrid_best_history, da_best_history,
+                                  sa_best_perm, sa_best_speeds, ga_best_perm, ga_best_speeds,
+                                  hybrid_best_perm, hybrid_best_speeds, da_best_perm, da_best_speeds,
+                                  sa_evals_list, ga_evals_list, hybrid_evals_list, da_evals_list):
+    """
+    Creates a comprehensive 6-plot analysis dashboard for algorithm comparison.
+    
+    Plots:
+    1. Box plot of objective distributions
+    2. 2x2 grid of Gaussian distributions
+    3. 2x2 grid of convergence curves (best runs)
+    4. Bar plot of best objectives
+    5. Bar plot of execution times
+    6. Permutation & speed comparison visualization
+    """
+    
+    # Prepare data
+    algorithms = []
+    results_list = []
+    colors = {'SA': 'blue', 'GA': 'red', 'HYBRID': 'green', 'DA': 'orange'}
+    
+    if sa_results:
+        algorithms.append('SA')
+        results_list.append(sa_results)
+    if ga_results:
+        algorithms.append('GA')
+        results_list.append(ga_results)
+    if hybrid_results:
+        algorithms.append('HYBRID')
+        results_list.append(hybrid_results)
+    if da_results:
+        algorithms.append('DA')
+        results_list.append(da_results)
+    
+    # =========================================================================
+    # PLOT 1: Box Plot of Objective Distributions
+    # =========================================================================
+    print("\n1/6: Generating box plot comparison...")
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
+    
+    bp = ax1.boxplot(results_list, labels=algorithms, patch_artist=True,
+                     showmeans=True, meanline=True,
+                     boxprops=dict(linewidth=2),
+                     whiskerprops=dict(linewidth=2),
+                     capprops=dict(linewidth=2),
+                     medianprops=dict(color='darkred', linewidth=2.5),
+                     meanprops=dict(color='black', linestyle='--', linewidth=2))
+    
+    # Color boxes
+    for patch, algo in zip(bp['boxes'], algorithms):
+        patch.set_facecolor(colors[algo])
+        patch.set_alpha(0.6)
+    
+    ax1.set_title(f'Algorithm Performance Comparison ({NUM_EXPERIMENT_RUNS} Runs Each)', 
+                  fontsize=14, fontweight='bold')
+    ax1.set_ylabel('Final Objective Cost (f) - Lower is Better', fontsize=12)
+    ax1.set_xlabel('Algorithm', fontsize=12)
+    ax1.grid(True, axis='y', linestyle='--', alpha=0.5)
+    
+    # Add statistics annotation
+    stats_text = []
+    for i, algo in enumerate(algorithms):
+        mean_val = all_stats[algo]['mean']
+        std_val = all_stats[algo]['std']
+        stats_text.append(f"{algo}: μ={mean_val:.2f}, σ={std_val:.2f}")
+    
+    ax1.text(0.02, 0.98, '\n'.join(stats_text), transform=ax1.transAxes,
+            fontsize=9, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # =========================================================================
+    # PLOT 2: 2x2 Grid of Gaussian Distributions
+    # =========================================================================
+    print("2/6: Generating Gaussian distribution grid...")
+    fig2, axs2 = plt.subplots(2, 2, figsize=(14, 10))
+    fig2.suptitle('Objective Distribution Analysis (Gaussian KDE)', fontsize=16, fontweight='bold')
+    
+    all_results_flat = [val for sublist in results_list for val in sublist]
+    global_min = min(all_results_flat)
+    global_max = max(all_results_flat)
+    bins = np.linspace(global_min, global_max, 30)
+    kde_x = np.linspace(global_min, global_max, 200)
+    
+    positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    
+    for idx, algo in enumerate(algorithms):
+        row, col = positions[idx]
+        ax = axs2[row, col]
+        
+        results = results_list[idx]
+        color = colors[algo]
+        
+        # Histogram
+        ax.hist(results, bins=bins, alpha=0.6, color=color, 
+               density=True, edgecolor='black', linewidth=1.5)
+        
+        # KDE
+        if len(results) > 1:
+            kde = stats.gaussian_kde(results)
+            ax.plot(kde_x, kde(kde_x), color='darkblue', linewidth=2.5, 
+                   label=f'{algo} KDE')
+        
+        # Statistics
+        mean_val = np.mean(results)
+        std_val = np.std(results)
+        min_val = np.min(results)
+        max_val = np.max(results)
+        
+        ax.axvline(mean_val, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_val:.2f}')
+        ax.axvline(mean_val - std_val, color='orange', linestyle=':', linewidth=1.5, alpha=0.7)
+        ax.axvline(mean_val + std_val, color='orange', linestyle=':', linewidth=1.5, alpha=0.7)
+        
+        ax.set_title(f'{algo} Distribution', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Objective Cost (f)', fontsize=10)
+        ax.set_ylabel('Probability Density', fontsize=10)
+        ax.legend(loc='upper right', fontsize=9)
+        ax.grid(True, alpha=0.3)
+        
+        # Add statistics text box
+        stats_str = (f'Mean: {mean_val:.2f}\nStd: {std_val:.2f}\n'
+                    f'Min: {min_val:.2f}\nMax: {max_val:.2f}')
+        ax.text(0.05, 0.95, stats_str, transform=ax.transAxes,
+               fontsize=8, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+    
+    # Hide unused subplot if only 3 algorithms
+    if len(algorithms) < 4:
+        for idx in range(len(algorithms), 4):
+            row, col = positions[idx]
+            axs2[row, col].axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # =========================================================================
+    # PLOT 3: 2x2 Grid of Convergence Curves (Best Runs)
+    # =========================================================================
+    print("3/6: Generating convergence curve grid...")
+    fig3, axs3 = plt.subplots(2, 2, figsize=(14, 10))
+    fig3.suptitle('Convergence Analysis (Best Run per Algorithm)', fontsize=16, fontweight='bold')
+    
+    histories = [sa_best_history, ga_best_history, hybrid_best_history, da_best_history]
+    evals_lists = [sa_evals_list, ga_evals_list, hybrid_evals_list, da_evals_list]
+    
+    for idx, algo in enumerate(algorithms):
+        row, col = positions[idx]
+        ax = axs3[row, col]
+        
+        history = histories[idx]
+        color = colors[algo]
+        
+        # Extract best fitness over iterations
+        if algo == 'SA':
+            costs = history.get('costs', [])
+            x_label = 'Iteration'
+            x_vals = range(1, len(costs) + 1)
+        elif algo == 'GA':
+            costs = history.get('best_f', [])
+            x_label = 'Generation'
+            x_vals = range(len(costs))
+        elif algo == 'HYBRID':
+            costs = history.get('best_f', [])
+            x_label = 'Combined Iteration (ACO + PSO)'
+            x_vals = range(len(costs))
+        elif algo == 'DA':
+            # DA has two-stage structure
+            stage1_history = history.get('stage1', {})
+            stage2_history = history.get('stage2', {})
+            stage1_best = stage1_history.get('best', [])
+            stage2_best = stage2_history.get('best', [])
+            costs = list(stage1_best) + list(stage2_best) if stage1_best and stage2_best else []
+            x_label = 'Combined Iteration (Stage 1 + Stage 2)'
+            x_vals = range(len(costs))
+        
+        if costs:
+            # Plot convergence
+            ax.plot(x_vals, costs, color=color, linewidth=2.5, label=f'{algo} Best Cost')
+            
+            # Mark initial and final
+            ax.scatter([x_vals[0]], [costs[0]], color='green', s=100, zorder=5, 
+                      marker='o', label=f'Initial: {costs[0]:.2f}')
+            ax.scatter([x_vals[-1]], [costs[-1]], color='red', s=100, zorder=5, 
+                      marker='*', label=f'Final: {costs[-1]:.2f}')
+            
+            # Shade improvement region
+            ax.fill_between(x_vals, costs[0], costs, alpha=0.2, color=color)
+            
+            ax.set_title(f'{algo} Convergence Curve', fontsize=12, fontweight='bold')
+            ax.set_xlabel(x_label, fontsize=10)
+            ax.set_ylabel('Objective Cost (f)', fontsize=10)
+            ax.legend(loc='upper right', fontsize=9)
+            ax.grid(True, alpha=0.3)
+            
+            # Improvement percentage
+            improvement = ((costs[0] - costs[-1]) / costs[0]) * 100
+            ax.text(0.05, 0.05, f'Improvement: {improvement:.1f}%', 
+                   transform=ax.transAxes, fontsize=9,
+                   bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8))
+        else:
+            ax.text(0.5, 0.5, f'{algo}\nNo convergence data', 
+                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+            ax.axis('off')
+    
+    # Hide unused subplot if only 3 algorithms
+    if len(algorithms) < 4:
+        for idx in range(len(algorithms), 4):
+            row, col = positions[idx]
+            axs3[row, col].axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # =========================================================================
+    # PLOT 4: Bar Plot of Best Objectives
+    # =========================================================================
+    print("4/6: Generating best objective comparison...")
+    fig4, ax4 = plt.subplots(figsize=(10, 6))
+    
+    best_objs = [all_stats[algo]['best'] for algo in algorithms]
+    bar_colors = [colors[algo] for algo in algorithms]
+    
+    bars = ax4.bar(algorithms, best_objs, color=bar_colors, edgecolor='black', 
+                   linewidth=2, alpha=0.7)
+    
+    # Highlight winner
+    winner_idx = np.argmin(best_objs)
+    bars[winner_idx].set_edgecolor('gold')
+    bars[winner_idx].set_linewidth(4)
+    bars[winner_idx].set_alpha(1.0)
+    
+    # Add value labels on bars
+    for bar, val in zip(bars, best_objs):
+        height = bar.get_height()
+        ax4.text(bar.get_x() + bar.get_width()/2., height,
+                f'{val:.2f}',
+                ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    ax4.set_title('Best Objective Cost Comparison', fontsize=14, fontweight='bold')
+    ax4.set_ylabel('Best Objective Cost (f) - Lower is Better', fontsize=12)
+    ax4.set_xlabel('Algorithm', fontsize=12)
+    ax4.grid(True, axis='y', linestyle='--', alpha=0.5)
+    
+    # Add winner annotation
+    ax4.text(0.5, 0.95, f'Winner: {algorithms[winner_idx]} ({best_objs[winner_idx]:.2f})',
+            transform=ax4.transAxes, ha='center', va='top', fontsize=12,
+            bbox=dict(boxstyle='round', facecolor='gold', alpha=0.8))
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # =========================================================================
+    # PLOT 5: Bar Plot of Execution Times
+    # =========================================================================
+    print("5/6: Generating execution time comparison...")
+    fig5, ax5 = plt.subplots(figsize=(10, 6))
+    
+    exec_times = [all_stats[algo]['time'] for algo in algorithms]
+    bar_colors = [colors[algo] for algo in algorithms]
+    
+    bars = ax5.bar(algorithms, exec_times, color=bar_colors, edgecolor='black', 
+                   linewidth=2, alpha=0.7)
+    
+    # Highlight fastest
+    fastest_idx = np.argmin(exec_times)
+    bars[fastest_idx].set_edgecolor('gold')
+    bars[fastest_idx].set_linewidth(4)
+    bars[fastest_idx].set_alpha(1.0)
+    
+    # Add value labels on bars
+    for bar, val in zip(bars, exec_times):
+        height = bar.get_height()
+        ax5.text(bar.get_x() + bar.get_width()/2., height,
+                f'{val:.2f}s',
+                ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    ax5.set_title('Average Execution Time Comparison', fontsize=14, fontweight='bold')
+    ax5.set_ylabel('Average Time per Run (seconds)', fontsize=12)
+    ax5.set_xlabel('Algorithm', fontsize=12)
+    ax5.grid(True, axis='y', linestyle='--', alpha=0.5)
+    
+    # Add fastest annotation
+    ax5.text(0.5, 0.95, f'Fastest: {algorithms[fastest_idx]} ({exec_times[fastest_idx]:.2f}s)',
+            transform=ax5.transAxes, ha='center', va='top', fontsize=12,
+            bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8))
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # =========================================================================
+    # PLOT 6: Permutation & Speed Comparison (Creative Visualization)
+    # =========================================================================
+    print("6/6: Generating permutation & speed visualization...")
+    
+    perms = [sa_best_perm, ga_best_perm, hybrid_best_perm, da_best_perm]
+    speeds_lists = [sa_best_speeds, ga_best_speeds, hybrid_best_speeds, da_best_speeds]
+    
+    fig6 = plt.figure(figsize=(16, 12))
+    gs = fig6.add_gridspec(3, 2, hspace=0.4, wspace=0.3)
+    
+    # Top: Permutation comparison (heatmap-style)
+    ax_perm = fig6.add_subplot(gs[0, :])
+    
+    # Create permutation matrix (algorithms x vehicles)
+    num_vehicles = len(sa_best_perm) if sa_best_perm else 0
+    perm_matrix = np.zeros((len(algorithms), num_vehicles))
+    
+    for i, perm in enumerate(perms):
+        if perm:
+            perm_matrix[i, :] = [v.id for v in perm]
+    
+    im = ax_perm.imshow(perm_matrix, cmap='tab20', aspect='auto', interpolation='nearest')
+    ax_perm.set_yticks(range(len(algorithms)))
+    ax_perm.set_yticklabels(algorithms)
+    ax_perm.set_xlabel('Scheduling Order (Position in Permutation)', fontsize=11)
+    ax_perm.set_ylabel('Algorithm', fontsize=11)
+    ax_perm.set_title('Vehicle Scheduling Order Comparison', fontsize=13, fontweight='bold')
+    
+    # Add vehicle IDs as text
+    for i in range(len(algorithms)):
+        for j in range(num_vehicles):
+            if perms[i]:
+                text = ax_perm.text(j, i, f'{int(perm_matrix[i, j])}',
+                                   ha="center", va="center", color="white", 
+                                   fontsize=8, fontweight='bold')
+    
+    # Middle row: Speed distributions (box plots per algorithm)
+    for idx, algo in enumerate(algorithms[:2]):  # First two algorithms
+        ax_speed = fig6.add_subplot(gs[1, idx])
+        speeds = speeds_lists[idx]
+        
+        if speeds:
+            # Create box plot
+            bp = ax_speed.boxplot([speeds], labels=[algo], patch_artist=True,
+                                  showmeans=True, meanline=True)
+            bp['boxes'][0].set_facecolor(colors[algo])
+            bp['boxes'][0].set_alpha(0.6)
+            
+            ax_speed.set_ylabel('Assigned Speed (m/s)', fontsize=10)
+            ax_speed.set_title(f'{algo} Speed Distribution', fontsize=11, fontweight='bold')
+            ax_speed.grid(True, axis='y', alpha=0.3)
+            
+            # Add statistics
+            stats_str = (f'Mean: {np.mean(speeds):.2f}\n'
+                        f'Std: {np.std(speeds):.2f}\n'
+                        f'Min: {np.min(speeds):.2f}\n'
+                        f'Max: {np.max(speeds):.2f}')
+            ax_speed.text(0.02, 0.98, stats_str, transform=ax_speed.transAxes,
+                         fontsize=8, verticalalignment='top',
+                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+    
+    # Bottom row: Speed distributions (remaining algorithms)
+    for idx, algo in enumerate(algorithms[2:]):  # Remaining algorithms
+        ax_speed = fig6.add_subplot(gs[2, idx])
+        speeds = speeds_lists[idx + 2]
+        
+        if speeds:
+            bp = ax_speed.boxplot([speeds], labels=[algo], patch_artist=True,
+                                  showmeans=True, meanline=True)
+            bp['boxes'][0].set_facecolor(colors[algo])
+            bp['boxes'][0].set_alpha(0.6)
+            
+            ax_speed.set_ylabel('Assigned Speed (m/s)', fontsize=10)
+            ax_speed.set_title(f'{algo} Speed Distribution', fontsize=11, fontweight='bold')
+            ax_speed.grid(True, axis='y', alpha=0.3)
+            
+            stats_str = (f'Mean: {np.mean(speeds):.2f}\n'
+                        f'Std: {np.std(speeds):.2f}\n'
+                        f'Min: {np.min(speeds):.2f}\n'
+                        f'Max: {np.max(speeds):.2f}')
+            ax_speed.text(0.02, 0.98, stats_str, transform=ax_speed.transAxes,
+                         fontsize=8, verticalalignment='top',
+                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+    
+    fig6.suptitle('Solution Characteristics: Permutation & Speed Assignment', 
+                  fontsize=16, fontweight='bold')
+    plt.show()
+    
+    print("\nAll comprehensive comparison plots generated successfully!")
+
+
+# =============================================================================
 # VISUALIZATION LAUNCHERS
 # =============================================================================
 def visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict):
@@ -990,8 +1378,8 @@ def main():
         all_points = set().union(*(v.path for v in all_vehicles if v.path))
         tau_p_dict = {p: config.tau for p in all_points}
         
-        # Run DA optimizer
-        optimizer = TwoStageDragonflyOptimizer(verbose=True, visualize=False, log_to_csv=True, csv_prefix="da_run")
+        # Run DA optimizer with visualization enabled
+        optimizer = TwoStageDragonflyOptimizer(verbose=True, visualize=True, log_to_csv=True, csv_prefix="da_run")
         perm_best, speeds_best, obj_best, results = optimizer.optimize()
         
         print("\n" + "="*70)
@@ -1078,16 +1466,27 @@ def main():
         
         sa_best_obj_overall = math.inf
         sa_best_history_overall = {}
+        sa_best_perm_overall = None
+        sa_best_speeds_overall = None
+        
         ga_best_obj_overall = math.inf
         ga_best_history_overall = {}
+        ga_best_perm_overall = None
+        ga_best_speeds_overall = None
+        
         aco_best_obj_overall = math.inf
         aco_best_history_overall = {}
+        
         pso_best_obj_overall = math.inf
         pso_best_history_overall = {}
+        
         hybrid_best_obj_overall = math.inf
         hybrid_best_history_overall = {}
-        hybrid_best_aco_iters = 100
-        hybrid_best_pso_iters = 50
+        hybrid_best_perm_overall = None
+        hybrid_best_speeds_overall = None
+        hybrid_best_aco_iters = 0
+        hybrid_best_pso_iters = 0
+        
         all_stats = {}
         
         # --- FIX: Defined experiment_timestamp here ---
@@ -1122,9 +1521,13 @@ def main():
                 if sa_obj < sa_best_obj_overall:
                     sa_best_obj_overall = sa_obj
                     sa_best_history_overall = sa_history
+                    # ADD THESE LINES:
+                    sa_best_perm_overall = sa_perm
+                    sa_best_speeds_overall = sa_speeds
             end_time_sa = time.time()
             
             all_stats['SA'] = {
+
                 'mean': np.mean(sa_results),
                 'std': np.std(sa_results),
                 'time': (end_time_sa - start_time_sa) / NUM_EXPERIMENT_RUNS,
@@ -1152,7 +1555,7 @@ def main():
                 start_time_ga = time.time()
                 for i in range(NUM_EXPERIMENT_RUNS):
                     print(f"  GA Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
-                    _, _, ga_obj, ga_history, _, _, _, ga_evals = run_ga(
+                    ga_perm, ga_speeds, ga_obj, ga_history, _, _, _, ga_evals = run_ga(
                         max_evaluations=ga_eval_limit, # <-- This is None
                         initial_population=common_ga_population,
                         verbose=False,
@@ -1164,6 +1567,8 @@ def main():
                     if ga_obj < ga_best_obj_overall:
                         ga_best_obj_overall = ga_obj
                         ga_best_history_overall = ga_history
+                        ga_best_perm_overall = ga_perm
+                        ga_best_speeds_overall = ga_speeds
                 end_time_ga = time.time()
                 
                 all_stats['GA'] = {
@@ -1269,6 +1674,8 @@ def main():
                     if hybrid_obj < hybrid_best_obj_overall:
                         hybrid_best_obj_overall = hybrid_obj
                         hybrid_best_history_overall = hybrid_history
+                        hybrid_best_perm_overall = hybrid_perm
+                        hybrid_best_speeds_overall = hybrid_speeds
                         hybrid_best_aco_iters = aco_iters
                         hybrid_best_pso_iters = pso_iters
                 end_time_hybrid = time.time()
@@ -1289,6 +1696,10 @@ def main():
                 da_evals_list = []
                 da_best_obj_overall = math.inf
                 da_best_history_overall = {}
+                # --- ADDED: Store best solution ---
+                da_best_perm_overall = None
+                da_best_speeds_overall = None
+                # --- END ADDED ---
                 
                 print("\n" + "="*70)
                 print(f"RUNNING DA EXPERIMENT ({NUM_EXPERIMENT_RUNS} runs)...")
@@ -1298,13 +1709,9 @@ def main():
                 for i in range(NUM_EXPERIMENT_RUNS):
                     print(f"  DA Run {i+1}/{NUM_EXPERIMENT_RUNS}...")
                     
-                    # Create a new optimizer instance for each run
                     optimizer = TwoStageDragonflyOptimizer(verbose=False, visualize=False, log_to_csv=False)
-                    
-                    # optimize() returns: (best_permutation, best_speeds, best_fitness, results_dict)
                     da_perm, da_speeds, da_obj, da_results_dict = optimizer.optimize()
                     
-                    # Extract total evaluations from results_dict or calculate from parameters
                     da_evals = (DISCRETE_SWARM_SIZE * DISCRETE_MAX_ITERATIONS + 
                                CONTINUOUS_SWARM_SIZE * CONTINUOUS_MAX_ITERATIONS)
                     
@@ -1314,11 +1721,14 @@ def main():
                     
                     if da_obj < da_best_obj_overall:
                         da_best_obj_overall = da_obj
-                        # Store both stage histories from results_dict
                         da_best_history_overall = {
                             'stage1': da_results_dict.get('stage1_history', {}),
                             'stage2': da_results_dict.get('stage2_history', {})
                         }
+                        # --- ADDED: Store best solution ---
+                        da_best_perm_overall = da_perm
+                        da_best_speeds_overall = da_speeds
+                        # --- END ADDED ---
                 
                 end_time_da = time.time()
                 
@@ -1540,59 +1950,35 @@ def main():
                 labels_list.append('DA')
                 colors_list.append('orange')
             
-            if results_list:
-                plot_experiment_results(results_list, labels_list)
-                plot_experiment_distribution(results_list, labels_list, colors_list)
+            # --- MODIFICATION: Use comprehensive comparison function ---
+            print("\n" + "="*70)
+            print("GENERATING COMPREHENSIVE COMPARISON DASHBOARD")
+            print("="*70)
             
-            # Display individual performance dashboards for best runs
-            if sa_results and sa_best_history_overall:
-                print("  Displaying performance dashboard for the BEST SA run...")
-                plot_sa_results(sa_best_history_overall)
-            
-            if ga_results and ga_best_history_overall:
-                print("  Displaying performance dashboard for the BEST GA run...")
-                plot_ga_performance_dashboard(ga_best_history_overall)
-            
-            if hybrid_results and hybrid_best_history_overall:
-                print("  Displaying performance dashboard for the BEST HYBRID run...")
-                plot_sequential_hybrid_dashboard(hybrid_best_history_overall, hybrid_best_aco_iters, hybrid_best_pso_iters)
-            
-            if da_results:
-                print("  Note: DA uses a two-stage approach. Detailed stage-by-stage plots are available in individual runs.")
-            
-            # Plotting overlay comparison for best runs (SA vs GA vs HYBRID vs DA)
-            try:
-                if sa_results and ga_results and hybrid_results and da_results:
-                    print("Generating overlay comparison (SA vs GA vs HYBRID vs DA - Best Runs)...")
-                    best_sa_evals = sa_evals_list[np.argmin(sa_results)]
-                    best_ga_evals = ga_evals_list[np.argmin(ga_results)]
-                    best_hybrid_evals = hybrid_evals_list[np.argmin(hybrid_results)]
-                    best_da_evals = da_evals_list[np.argmin(da_results)]
-                    plot_compare(sa_best_history_overall, ga_best_history_overall, 
-                                labels=('SA (Best)', 'GA (Best)', 'HYBRID (Best)', 'DA (Best)'), 
-                                sa_evals=best_sa_evals, ga_evals=best_ga_evals,
-                                history_hybrid=hybrid_best_history_overall, hybrid_evals=best_hybrid_evals,
-                                history_da=da_best_history_overall, da_evals=best_da_evals)
-                elif sa_results and ga_results and hybrid_results:
-                    print("Generating overlay comparison (SA vs GA vs HYBRID - Best Runs)...")
-                    best_sa_evals = sa_evals_list[np.argmin(sa_results)]
-                    best_ga_evals = ga_evals_list[np.argmin(ga_results)]
-                    best_hybrid_evals = hybrid_evals_list[np.argmin(hybrid_results)]
-                    plot_compare(sa_best_history_overall, ga_best_history_overall, 
-                                labels=('SA (Best)', 'GA (Best)', 'HYBRID (Best)'), 
-                                sa_evals=best_sa_evals, ga_evals=best_ga_evals,
-                                history_hybrid=hybrid_best_history_overall, hybrid_evals=best_hybrid_evals)
-                elif sa_results and ga_results:
-                    print("Generating overlay comparison (SA vs GA - Best Runs)...")
-                    best_sa_evals = sa_evals_list[np.argmin(sa_results)]
-                    best_ga_evals = ga_evals_list[np.argmin(ga_results)]
-                    plot_compare(sa_best_history_overall, ga_best_history_overall, labels=('SA (Best)', 'GA (Best)'), 
-                                 sa_evals=best_sa_evals, ga_evals=best_ga_evals)
-            except Exception as e:
-                print(f"Could not generate overlay comparison plot: {e}")
-                traceback.print_exc()
-        
-        print("  (All plots displayed)")
+            plot_comprehensive_comparison(
+                all_stats=all_stats,
+                sa_results=sa_results if sa_results else [],
+                ga_results=ga_results if ga_results else [],
+                hybrid_results=hybrid_results if hybrid_results else [],
+                da_results=da_results if da_results else [],
+                sa_best_history=sa_best_history_overall,
+                ga_best_history=ga_best_history_overall,
+                hybrid_best_history=hybrid_best_history_overall,
+                da_best_history=da_best_history_overall,
+                sa_best_perm=sa_best_perm_overall if 'sa_best_perm_overall' in locals() else None,
+                sa_best_speeds=sa_best_speeds_overall if 'sa_best_speeds_overall' in locals() else None,
+                ga_best_perm=ga_best_perm_overall if 'ga_best_perm_overall' in locals() else None,
+                ga_best_speeds=ga_best_speeds_overall if 'ga_best_speeds_overall' in locals() else None,
+                hybrid_best_perm=hybrid_best_perm_overall if 'hybrid_best_perm_overall' in locals() else None,
+                hybrid_best_speeds=hybrid_best_speeds_overall if 'hybrid_best_speeds_overall' in locals() else None,
+                da_best_perm=da_best_perm_overall if 'da_best_perm_overall' in locals() else None,
+                da_best_speeds=da_best_speeds_overall if 'da_best_speeds_overall' in locals() else None,
+                sa_evals_list=sa_evals_list if sa_results else [],
+                ga_evals_list=ga_evals_list if ga_results else [],
+                hybrid_evals_list=hybrid_evals_list if hybrid_results else [],
+                da_evals_list=da_evals_list if da_results else []
+            )
+            # --- END MODIFICATION ---
 
     else:
         print(f"Error: Unknown OPTIMIZATION_ALGORITHM: '{OPTIMIZATION_ALGORITHM}'")
