@@ -215,8 +215,46 @@ class VehicleAnimator:
         # Start distance is the visual queue position (negative value)
         self.start_dist = -queue_pos * (config.safety_distance * QUEUE_SPACING_VIS_FACTOR)
         
-        # End distance is the end of the exit ramp
+        # Determine end distance: by default it's the end of the exit ramp.
+        # Prefer to stop the animation when the vehicle ENTERS the destination
+        # lane (merge point `M_*`) so it disappears as soon as it reaches that
+        # lane; if no merge point exists in the path, fall back to the last
+        # conflict point, otherwise to the exit ramp.
         self.end_dist = self.cumulative_distances[-1]
+
+        # 1) Prefer merge point (destination lane marker 'M_*')
+        merge_name = None
+        for name in self.path_names:
+            if isinstance(name, str) and name.startswith('M_'):
+                merge_name = name
+                break
+
+        def _set_end_dist_from_label(lbl):
+            if lbl and lbl in POINT_COORDINATES:
+                p = POINT_COORDINATES[lbl]
+                # Find matching coordinate index in trajectory_coords
+                for idx, coord in enumerate(self.trajectory_coords):
+                    if np.allclose(coord, p, atol=1e-6):
+                        try:
+                            return float(self.cumulative_distances[idx])
+                        except Exception:
+                            return None
+            return None
+
+        # Try merge point first
+        merged_dist = _set_end_dist_from_label(merge_name)
+        if merged_dist is not None:
+            self.end_dist = merged_dist
+        else:
+            # 2) Fallback: last conflict point (name starting with 'C')
+            last_conflict = None
+            for name in reversed(self.path_names):
+                if isinstance(name, str) and name.startswith('C'):
+                    last_conflict = name
+                    break
+            conflict_dist = _set_end_dist_from_label(last_conflict)
+            if conflict_dist is not None:
+                self.end_dist = conflict_dist
         
         self.total_dist_to_travel = self.end_dist - self.start_dist
         safe_speed = max(self.speed, 1.0) # Avoid divide by zero
@@ -478,8 +516,24 @@ class IntersectionVisualization:
         """Update function called for each frame."""
         self.time_text.set_text(f'Time: {t:.2f}s')
         patches = [self.time_text]
-        for v_id in sorted(self.vehicle_animators.keys()):
+        # Iterate over a copy of keys because we may remove finished vehicles
+        for v_id in sorted(list(self.vehicle_animators.keys())):
             v_anim = self.vehicle_animators[v_id]
+
+            # If the vehicle has finished its movement (passed end_time),
+            # remove its patch and text from axes and from the animator map.
+            if t > v_anim.end_time_anim + 1e-6:
+                try:
+                    v_anim.patch.remove()
+                except Exception:
+                    pass
+                try:
+                    v_anim.text.remove()
+                except Exception:
+                    pass
+                del self.vehicle_animators[v_id]
+                continue
+
             v_anim.set_position(t)
             patches.append(v_anim.patch); patches.append(v_anim.text)
         return patches
