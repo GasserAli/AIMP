@@ -147,7 +147,7 @@ except ImportError as e:
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. Hybrid (natural stops).
 # 'COMPARE_ALL': N-run statistical comparison of GA, SA, HYBRID, and DA (natural stops).
-OPTIMIZATION_ALGORITHM = 'COMPARE_ALL'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT', 'COMPARE_ALL'
+OPTIMIZATION_ALGORITHM = 'HYBRID'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT', 'COMPARE_ALL'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -158,7 +158,7 @@ VISUALIZATION_METHOD = 'matplotlib'  # 'matplotlib', 'web', 'none'
 # Budget for *direct comparison modes only* ('BOTH')
 COMPARISON_EVALUATION_BUDGET = 5000 
 # Number of runs for 'SA_ANALYSIS', 'GA_ANALYSIS', 'EXPERIMENT'
-NUM_EXPERIMENT_RUNS = 5  # 
+NUM_EXPERIMENT_RUNS = 50  
 RANDOM_SEED = 42 
 
 # SA Parameters (used for 'SA' and 'SA_ANALYSIS')
