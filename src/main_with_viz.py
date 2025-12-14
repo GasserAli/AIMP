@@ -146,7 +146,8 @@ except ImportError as e:
 # 'DA_ANALYSIS': N-run statistical analysis of DA (natural stop).
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. Hybrid (natural stops).
-OPTIMIZATION_ALGORITHM = 'DA_ANALYSIS'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT'
+# 'COMPARE_ALL': N-run statistical comparison of GA, SA, HYBRID, and DA (natural stops).
+OPTIMIZATION_ALGORITHM = 'COMPARE_ALL'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT', 'COMPARE_ALL'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -237,7 +238,7 @@ else:
 # --- Conditional Imports Based on Visualization Method ---
 animation_enabled = False
 web_viz_enabled = False
-is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS', 'DA_ANALYSIS')
+is_analysis_mode = OPTIMIZATION_ALGORITHM in ('BOTH', 'EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS', 'DA_ANALYSIS', 'COMPARE_ALL')
 
 if not is_analysis_mode and VISUALIZATION_METHOD == 'matplotlib':
     try:
@@ -322,11 +323,12 @@ def plot_sa_vs_ga_comparison(sa_history, ga_history, sa_evals, ga_evals):
     plt.tight_layout()
     plt.show()
 
-def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_evals=None, history_hybrid=None, hybrid_evals=None):
-    """Overlay SA, GA, and optionally HYBRID histories on a single 2x2 comparison grid.
+def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_evals=None, history_hybrid=None, hybrid_evals=None, history_da=None, da_evals=None):
+    """Overlay SA, GA, and optionally HYBRID and DA histories on a single 2x2 comparison grid.
 
-    Accepts history dicts produced by `run_sa`, `run_ga`, and `run_sequential_hybrid` (formats used in this project).
+    Accepts history dicts produced by `run_sa`, `run_ga`, `run_sequential_hybrid`, and DA optimizer (formats used in this project).
     The function will look for common keys and plot matching series; missing series are skipped.
+    Note: DA history has a two-stage structure with 'stage1' and 'stage2' keys.
     """
     def first(h, options):
         for k in options:
@@ -389,6 +391,27 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         avg_delays_hybrid = first(history_hybrid, ['best_avg_delay', 'avg_delays'])
         total_delays_hybrid = first(history_hybrid, ['best_fall', 'total_delays'])
         emergency_delays_hybrid = first(history_hybrid, ['best_fem', 'emergency_delays'])
+    
+    # DA data extraction (two-stage structure)
+    costs_da = []
+    if history_da:
+        # DA has stage1 and stage2 histories, we'll combine them for visualization
+        # Note: DA doesn't track avg_delays, total_delays, emergency_delays in the same way
+        # We'll only plot the cost/fitness data
+        stage1_history = history_da.get('stage1', {})
+        stage2_history = history_da.get('stage2', {})
+        
+        # Extract best fitness from both stages if available
+        stage1_best = first(stage1_history, ['best_fitness', 'best_f', 'costs'])
+        stage2_best = first(stage2_history, ['best_fitness', 'best_f', 'costs'])
+        
+        # Combine both stages
+        if stage1_best and stage2_best:
+            costs_da = list(stage1_best) + list(stage2_best)
+        elif stage1_best:
+            costs_da = list(stage1_best)
+        elif stage2_best:
+            costs_da = list(stage2_best)
 
     # Prepare x-axis mapping to NUMBER OF FITNESS EVALUATIONS
     # GA: history entries are per-generation. Map generation index to cumulative evaluation counts.
@@ -457,11 +480,27 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
         x_total_delays_hybrid = np.array(hybrid_eval_points[:len(total_delays_hybrid)])
         x_emergency_delays_hybrid = np.array(hybrid_eval_points[:len(emergency_delays_hybrid)])
     
+    # DA x arrays and clipped series
+    x_costs_da = np.array([])
+    if history_da and costs_da:
+        # DA: simple iteration-based mapping
+        da_len = len(costs_da)
+        da_eval_points = list(range(1, da_len + 1))
+        
+        # Clip to budget if provided
+        if da_evals is not None and da_eval_points:
+            clip_idx = min(da_evals, len(da_eval_points))
+            da_eval_points = da_eval_points[:clip_idx]
+            costs_da = costs_da[:clip_idx]
+        
+        x_costs_da = np.array(da_eval_points)
+    
     # Determine title based on what algorithms are present
     title_parts = []
     if history_sa: title_parts.append(labels[0] if len(labels) > 0 else 'SA')
     if history_ga: title_parts.append(labels[1] if len(labels) > 1 else 'GA')
     if history_hybrid: title_parts.append(labels[2] if len(labels) > 2 else 'HYBRID')
+    if history_da: title_parts.append(labels[3] if len(labels) > 3 else 'DA')
     title = f"Overlay: {' vs '.join(title_parts)}"
     
     fig, axs = plt.subplots(2, 2, figsize=(13, 9))
@@ -476,6 +515,9 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
     if x_costs_hybrid.size:
         hybrid_label = labels[2] if len(labels) > 2 else 'HYBRID'
         ax.plot(x_costs_hybrid, costs_hybrid, label=f"{hybrid_label} best", color='tab:green')
+    if x_costs_da.size:
+        da_label = labels[3] if len(labels) > 3 else 'DA'
+        ax.plot(x_costs_da, costs_da, label=f"{da_label} best", color='tab:purple')
     if x_avg_sa.size:
         ax.plot(x_avg_sa, avg_sa, label=f"{labels[0]} avg", color='tab:cyan', linestyle=':')
     if x_avg_ga.size:
@@ -533,12 +575,9 @@ def plot_compare(history_sa, history_ga, labels=('SA', 'GA'), sa_evals=None, ga_
 
     # Set common x-limits based on provided evaluation budgets or global comparison budget
     x_max = None
-    if sa_evals is not None and ga_evals is not None:
-        x_max = max(sa_evals, ga_evals) # For Natural Run, just show longest run
-    elif sa_evals is not None:
-        x_max = sa_evals
-    elif ga_evals is not None:
-        x_max = ga_evals
+    eval_budgets = [e for e in [sa_evals, ga_evals, hybrid_evals, da_evals] if e is not None]
+    if eval_budgets:
+        x_max = max(eval_budgets)  # Show the longest run
     else:
         try:
             # Fallback for 'BOTH' mode
@@ -1011,7 +1050,7 @@ def main():
             traceback.print_exc()
 
     # --- MODIFICATION: Split Experiment logic for "Natural Run" ---
-    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS', 'DA_ANALYSIS'):
+    elif OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'HYBRID_ANALYSIS', 'DA_ANALYSIS', 'COMPARE_ALL'):
         print("\n--- PREPARING EXPERIMENT (NATURAL RUN) ---")
         print(f"Running {NUM_EXPERIMENT_RUNS} times for selected algorithm(s).")
         
@@ -1055,7 +1094,7 @@ def main():
         experiment_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # 3. Run SA Experiment
-        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS'):
+        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'SA_ANALYSIS', 'COMPARE_ALL'):
             print("\nGenerating common initial solution for SA...")
             common_sa_solution = sa_create_initial_solution(geom)
             
@@ -1094,7 +1133,7 @@ def main():
             }
 
         # 4. Run GA Experiment
-        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'GA_ANALYSIS'):
+        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'GA_ANALYSIS', 'COMPARE_ALL'):
             if not GA_IMPORTED:
                 print("WARNING: GA selected for experiment but ga.py could not be imported. Skipping GA.")
             else:
@@ -1208,7 +1247,7 @@ def main():
                 }
         
         # 7. Run HYBRID Experiment
-        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'HYBRID_ANALYSIS'):
+        if OPTIMIZATION_ALGORITHM in ('EXPERIMENT', 'HYBRID_ANALYSIS', 'COMPARE_ALL'):
             if not HYBRID_IMPORTED:
                 print("WARNING: HYBRID requires sequential_hybrid module. Skipping HYBRID.")
             else:
@@ -1241,7 +1280,7 @@ def main():
                     'best': hybrid_best_obj_overall,
                     'avg_evals': np.mean(hybrid_evals_list)
                 }
-        if OPTIMIZATION_ALGORITHM == 'DA_ANALYSIS':
+        if OPTIMIZATION_ALGORITHM in ('DA_ANALYSIS', 'COMPARE_ALL'):
             if not DA_IMPORTED:
                 print("WARNING: DA selected but da.py not imported. Skipping DA.")
             else:
@@ -1370,6 +1409,11 @@ def main():
         
         if OPTIMIZATION_ALGORITHM == 'EXPERIMENT':
             save_experiment_raw_data(experiment_timestamp, sa_results, ga_results, sa_evals_list, ga_evals_list, aco_results, aco_evals_list, pso_results, pso_evals_list, hybrid_results, hybrid_evals_list)
+        elif OPTIMIZATION_ALGORITHM == 'COMPARE_ALL':
+            save_experiment_raw_data(experiment_timestamp, sa_results, ga_results, sa_evals_list, ga_evals_list, 
+                                   aco_results=None, aco_evals=None, pso_results=None, pso_evals=None, 
+                                   hybrid_results=hybrid_results, hybrid_evals=hybrid_evals_list, 
+                                   da_results=da_results, da_evals=da_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'SA_ANALYSIS':
             save_experiment_raw_data(experiment_timestamp, sa_results=sa_results, sa_evals=sa_evals_list)
         elif OPTIMIZATION_ALGORITHM == 'GA_ANALYSIS':
@@ -1472,6 +1516,81 @@ def main():
             plot_experiment_results([da_results], ['DA'])
             plot_experiment_distribution([da_results], ['DA'], ['orange'])
             print("  Note: DA uses a two-stage approach. Detailed stage-by-stage plots are available in individual runs.")
+        
+        elif OPTIMIZATION_ALGORITHM == 'COMPARE_ALL':
+            # Comprehensive comparison of GA, SA, HYBRID, and DA
+            results_list = []
+            labels_list = []
+            colors_list = []
+            
+            if sa_results:
+                results_list.append(sa_results)
+                labels_list.append('SA')
+                colors_list.append('blue')
+            if ga_results:
+                results_list.append(ga_results)
+                labels_list.append('GA')
+                colors_list.append('red')
+            if hybrid_results:
+                results_list.append(hybrid_results)
+                labels_list.append('HYBRID')
+                colors_list.append('green')
+            if da_results:
+                results_list.append(da_results)
+                labels_list.append('DA')
+                colors_list.append('orange')
+            
+            if results_list:
+                plot_experiment_results(results_list, labels_list)
+                plot_experiment_distribution(results_list, labels_list, colors_list)
+            
+            # Display individual performance dashboards for best runs
+            if sa_results and sa_best_history_overall:
+                print("  Displaying performance dashboard for the BEST SA run...")
+                plot_sa_results(sa_best_history_overall)
+            
+            if ga_results and ga_best_history_overall:
+                print("  Displaying performance dashboard for the BEST GA run...")
+                plot_ga_performance_dashboard(ga_best_history_overall)
+            
+            if hybrid_results and hybrid_best_history_overall:
+                print("  Displaying performance dashboard for the BEST HYBRID run...")
+                plot_sequential_hybrid_dashboard(hybrid_best_history_overall, hybrid_best_aco_iters, hybrid_best_pso_iters)
+            
+            if da_results:
+                print("  Note: DA uses a two-stage approach. Detailed stage-by-stage plots are available in individual runs.")
+            
+            # Plotting overlay comparison for best runs (SA vs GA vs HYBRID vs DA)
+            try:
+                if sa_results and ga_results and hybrid_results and da_results:
+                    print("Generating overlay comparison (SA vs GA vs HYBRID vs DA - Best Runs)...")
+                    best_sa_evals = sa_evals_list[np.argmin(sa_results)]
+                    best_ga_evals = ga_evals_list[np.argmin(ga_results)]
+                    best_hybrid_evals = hybrid_evals_list[np.argmin(hybrid_results)]
+                    best_da_evals = da_evals_list[np.argmin(da_results)]
+                    plot_compare(sa_best_history_overall, ga_best_history_overall, 
+                                labels=('SA (Best)', 'GA (Best)', 'HYBRID (Best)', 'DA (Best)'), 
+                                sa_evals=best_sa_evals, ga_evals=best_ga_evals,
+                                history_hybrid=hybrid_best_history_overall, hybrid_evals=best_hybrid_evals,
+                                history_da=da_best_history_overall, da_evals=best_da_evals)
+                elif sa_results and ga_results and hybrid_results:
+                    print("Generating overlay comparison (SA vs GA vs HYBRID - Best Runs)...")
+                    best_sa_evals = sa_evals_list[np.argmin(sa_results)]
+                    best_ga_evals = ga_evals_list[np.argmin(ga_results)]
+                    best_hybrid_evals = hybrid_evals_list[np.argmin(hybrid_results)]
+                    plot_compare(sa_best_history_overall, ga_best_history_overall, 
+                                labels=('SA (Best)', 'GA (Best)', 'HYBRID (Best)'), 
+                                sa_evals=best_sa_evals, ga_evals=best_ga_evals,
+                                history_hybrid=hybrid_best_history_overall, hybrid_evals=best_hybrid_evals)
+                elif sa_results and ga_results:
+                    print("Generating overlay comparison (SA vs GA - Best Runs)...")
+                    best_sa_evals = sa_evals_list[np.argmin(sa_results)]
+                    best_ga_evals = ga_evals_list[np.argmin(ga_results)]
+                    plot_compare(sa_best_history_overall, ga_best_history_overall, labels=('SA (Best)', 'GA (Best)'), 
+                                 sa_evals=best_sa_evals, ga_evals=best_ga_evals)
+            except Exception as e:
+                print(f"Could not generate overlay comparison plot: {e}")
+                traceback.print_exc()
         
         print("  (All plots displayed)")
 
