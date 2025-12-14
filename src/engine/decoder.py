@@ -47,39 +47,59 @@ def run_decoder(permutation: List[Vehicle],
     # Map vehicle IDs to speeds for quick lookup
     speeds_dict = {p.id: s for p, s in zip(permutation, speeds)}
 
-    # Build queue_predecessors map for C0 constraint (followers cannot overtake leaders)
+    # Build queue_predecessors map based on PERMUTATION order (not config.pi order)
     queue_predecessors = {}
-    for queue in geom_init.entry_queues.values():
-        for idx in range(1, len(queue)):
-            queue_predecessors[queue[idx].id] = queue[idx-1].id
+    
+    # Group vehicles by approach from permutation
+    approach_perm_order = {'N': [], 'E': [], 'S': [], 'W': []}
+    for v in permutation:
+        if v.id in speeds_dict:
+            approach_perm_order[v.approach].append(v)
+    
+    # Build predecessor relationships based on permutation order
+    for approach, vehicles_in_approach in approach_perm_order.items():
+        for idx in range(1, len(vehicles_in_approach)):
+            follower = vehicles_in_approach[idx]
+            leader = vehicles_in_approach[idx - 1]
+            queue_predecessors[follower.id] = leader.id
 
     # --- 2. Calculate Realistic t_ear (Earliest Arrival at First Point) ---
-    # CRITICAL FIX: Use MAXIMUM speed (v_max) to calculate t_ear, NOT the vehicle's assigned speed
-    # This ensures t_ear is INDEPENDENT of optimizer decisions, so delays are computed fairly
-    d0 = config.inter_conflict_distance # meters (Distance for queue leader to reach first conflict point)
-              # TODO: Make d0 configurable
-
-    v_max = max(config.velocity_range)  # Use maximum allowed speed for all vehicles
-
-    # Calculate t_ear using MAXIMUM speed (independent of optimizer choices)
-    for queue in geom_init.entry_queues.values():
-        if not queue: continue
+    # CRITICAL FIX: t_ear should be based on PERMUTATION ORDER (scheduling priority)
+    # NOT on config.pi order (which is just the initial problem definition)
+    
+    d0 = config.inter_conflict_distance  # Distance to first conflict point
+    v_max = max(config.velocity_range)   # Maximum allowed speed
+    
+    # NEW APPROACH: Calculate t_ear based on PERMUTATION position
+    # Vehicles earlier in permutation get earlier spawn times (higher priority)
+    
+    # Group vehicles by approach from the permutation
+    approach_perm_groups = {'N': [], 'E': [], 'S': [], 'W': []}
+    for v in permutation:
+        if v.id in speeds_dict:  # Only consider vehicles in current solution
+            approach_perm_groups[v.approach].append(v)
+    
+    # Calculate t_ear for each vehicle based on its position in permutation
+    for approach, vehicles_in_perm in approach_perm_groups.items():
+        if not vehicles_in_perm:
+            continue
         
-        last_t_ear = -math.inf
-        
-        for idx, v in enumerate(queue):
-            if v.id not in speeds_dict: continue
-            
+        # Process vehicles in the order they appear in permutation
+        for idx, v in enumerate(vehicles_in_perm):
             if idx == 0:
-                # Leader: use max speed, not vehicle speed
-                current_t_ear = d0 / max(v_max, 1e-6)
+                # First vehicle from this approach (in permutation order)
+                t_ear[v.id] = d0 / v_max
             else:
-                # Follower: use max speed for consistency
-                time_gap = config.safety_distance / max(v_max, 1e-6)
-                current_t_ear = last_t_ear + time_gap
-            
-            t_ear[v.id] = current_t_ear
-            last_t_ear = current_t_ear # Update for the next follower
+                # Subsequent vehicles must wait for safety gap behind previous
+                prev_vehicle = vehicles_in_perm[idx - 1]
+                safety_time_gap = config.safety_distance / v_max
+                t_ear[v.id] = t_ear[prev_vehicle.id] + safety_time_gap
+    
+    # Sanity check: ensure all vehicles in permutation have t_ear
+    for v in permutation:
+        if v.id in speeds_dict and v.id not in t_ear:
+            # Fallback for edge cases
+            t_ear[v.id] = d0 / v_max
 
     # --- 3. Initialize Decoder State for vehicles in the current permutation ---
     num_vehicles_in_solution = 0
@@ -156,14 +176,31 @@ def run_decoder(permutation: List[Vehicle],
 
                 t_reach = t_prev_departure + travel_time
 
-            # --- C0 CONSTRAINT: Enforce queue order (followers cannot overtake leaders) ---
+            # --- C0 CONSTRAINT: Enforce permutation-based queue order ---
             if v_id in queue_predecessors:
                 leader_id = queue_predecessors[v_id]
-                if leader_id in scheduled_times and p in scheduled_times[leader_id]:
-                    # Leader has been scheduled at this point, ensure follower comes after
+                
+                # SAFETY: If leader not scheduled yet, SKIP follower (defer to next iteration)
+                if leader_id not in scheduled_times or not scheduled_times[leader_id]:
+                    continue  # Can't schedule follower before leader
+                
+                # CASE 1: Leader has been scheduled at the current point
+                if p in scheduled_times[leader_id]:
+                    # Follower must arrive AFTER leader at this shared point
                     leader_arrival = scheduled_times[leader_id][p]
-                    min_follower_time = leader_arrival + 0.01  # Minimum gap
+                    min_follower_time = leader_arrival + tau  # Full headway gap
                     t_reach = max(t_reach, min_follower_time)
+                
+                # CASE 2: Leader scheduled but not at this point yet
+                else:
+                    # Get leader's last scheduled time (most recent progress)
+                    if scheduled_times[leader_id]:
+                        leader_latest_time = max(scheduled_times[leader_id].values())
+                        
+                        # Follower must maintain safety distance in time
+                        min_safety_gap = config.safety_distance / max(v_assigned, 1e-6)
+                        min_follower_time = leader_latest_time + min_safety_gap
+                        t_reach = max(t_reach, min_follower_time)
 
             # --- Determine Scheduled Time (t_scheduled) ---
             # [cite_start]Earliest time the *current point* is free (based on [cite: 145])
