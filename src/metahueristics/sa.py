@@ -76,35 +76,40 @@ def create_initial_solution(geom):
 
 def validate_speeds(permutation, speeds, geom):
     """
-    Enforces C0 with a soft slack: followers can be slightly faster than leader.
+    Enforces C0 constraint based on PERMUTATION order (not config.pi order).
+    
+    Vehicles earlier in permutation are "leaders" for their approach.
+    Followers cannot exceed leader speeds (with optional slack).
     """
     v_new = list(speeds)
     speed_dict = {p.id: s for p, s in zip(permutation, v_new)}
-    epsilon = getattr(config, "follow_slack", 0.00)  # m/s slack; tune 0.01-0.5
-
-    for queue in geom.entry_queues.values():
-        if not queue: 
+    epsilon = getattr(config, "follow_slack", 0.0)  # Slack allowance
+    
+    # Group vehicles by approach based on permutation order
+    approach_perm_order = {'N': [], 'E': [], 'S': [], 'W': []}
+    for v in permutation:
+        approach_perm_order[v.approach].append(v)
+    
+    # Enforce C0: followers <= leaders (per approach, in permutation order)
+    for approach, vehicles_in_approach in approach_perm_order.items():
+        if len(vehicles_in_approach) < 2:
             continue
-
-        # find leader in this queue (first vehicle present in speed_dict)
-        leader = None
-        for v in queue:
-            if v.id in speed_dict:
-                leader = v
-                break
-        if not leader:
-            continue
-
-        last_speed = speed_dict[leader.id]
-        # apply soft clamp down the queue
-        followers = [v for v in queue if v.id != leader.id and v.id in speed_dict]
-        for follower in followers:
-            s = speed_dict[follower.id]
-            # allow slight exceedance but limit it
-            if s > last_speed + epsilon:
-                speed_dict[follower.id] = last_speed + epsilon
-            last_speed = speed_dict[follower.id]
-
+        
+        # First vehicle (leader) has no constraint
+        # Subsequent vehicles must not exceed predecessor speed
+        for idx in range(1, len(vehicles_in_approach)):
+            follower = vehicles_in_approach[idx]
+            leader = vehicles_in_approach[idx - 1]
+            
+            leader_speed = speed_dict.get(leader.id, config.velocity_range[0])
+            follower_speed = speed_dict.get(follower.id, config.velocity_range[0])
+            
+            # Enforce: v_follower <= v_leader + epsilon
+            max_allowed_speed = leader_speed + epsilon
+            if follower_speed > max_allowed_speed:
+                speed_dict[follower.id] = max_allowed_speed
+    
+    # Return speeds in permutation order
     return [speed_dict[v.id] for v in permutation]
 
 # --- replace generate_neighbor in sa.py with this ---
