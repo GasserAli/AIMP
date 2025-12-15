@@ -147,7 +147,7 @@ except ImportError as e:
 # 'BOTH':        Single run SA vs. GA (uses COMPARISON_EVALUATION_BUDGET).
 # 'EXPERIMENT':  N-run statistical comparison of SA vs. GA vs. Hybrid (natural stops).
 # 'COMPARE_ALL': N-run statistical comparison of GA, SA, HYBRID, and DA (natural stops).
-OPTIMIZATION_ALGORITHM = 'HYBRID'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT', 'COMPARE_ALL'
+OPTIMIZATION_ALGORITHM = 'COMPARE_ALL'  # 'SA', 'GA', 'ACO', 'PSO', 'HYBRID', 'DA', 'SA_ANALYSIS', 'GA_ANALYSIS', 'ACO_ANALYSIS', 'PSO_ANALYSIS', 'DA_ANALYSIS', 'BOTH', 'EXPERIMENT', 'COMPARE_ALL'
 
 # --- 2. CHOOSE VISUALIZATION ---
 # 'matplotlib', 'web', 'none'
@@ -158,7 +158,7 @@ VISUALIZATION_METHOD = 'matplotlib'  # 'matplotlib', 'web', 'none'
 # Budget for *direct comparison modes only* ('BOTH')
 COMPARISON_EVALUATION_BUDGET = 5000 
 # Number of runs for 'SA_ANALYSIS', 'GA_ANALYSIS', 'EXPERIMENT'
-NUM_EXPERIMENT_RUNS = 50  
+NUM_EXPERIMENT_RUNS = 3 
 RANDOM_SEED = 42 
 
 # SA Parameters (used for 'SA' and 'SA_ANALYSIS')
@@ -733,16 +733,7 @@ def plot_comprehensive_comparison(all_stats, sa_results, ga_results, hybrid_resu
     ax1.set_xlabel('Algorithm', fontsize=12)
     ax1.grid(True, axis='y', linestyle='--', alpha=0.5)
     
-    # Add statistics annotation
-    stats_text = []
-    for i, algo in enumerate(algorithms):
-        mean_val = all_stats[algo]['mean']
-        std_val = all_stats[algo]['std']
-        stats_text.append(f"{algo}: μ={mean_val:.2f}, σ={std_val:.2f}")
-    
-    ax1.text(0.02, 0.98, '\n'.join(stats_text), transform=ax1.transAxes,
-            fontsize=9, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    # Statistics annotation removed to avoid covering the box plots
     
     plt.tight_layout()
     plt.show()
@@ -771,13 +762,12 @@ def plot_comprehensive_comparison(all_stats, sa_results, ga_results, hybrid_resu
         
         # Histogram
         ax.hist(results, bins=bins, alpha=0.6, color=color, 
-               density=True, edgecolor='black', linewidth=1.5)
+               density=True, edgecolor='black', linewidth=1)
         
         # KDE
         if len(results) > 1:
             kde = stats.gaussian_kde(results)
-            ax.plot(kde_x, kde(kde_x), color='darkblue', linewidth=2.5, 
-                   label=f'{algo} KDE')
+            ax.plot(kde_x, kde(kde_x), color='darkblue', linewidth=1.5)
         
         # Statistics
         mean_val = np.mean(results)
@@ -795,12 +785,12 @@ def plot_comprehensive_comparison(all_stats, sa_results, ga_results, hybrid_resu
         ax.legend(loc='upper right', fontsize=9)
         ax.grid(True, alpha=0.3)
         
-        # Add statistics text box
-        stats_str = (f'Mean: {mean_val:.2f}\nStd: {std_val:.2f}\n'
-                    f'Min: {min_val:.2f}\nMax: {max_val:.2f}')
-        ax.text(0.05, 0.95, stats_str, transform=ax.transAxes,
-               fontsize=8, verticalalignment='top',
-               bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+        # # Add statistics text box
+        # stats_str = (f'Mean: {mean_val:.2f}\nStd: {std_val:.2f}\n'
+        #             f'Min: {min_val:.2f}\nMax: {max_val:.2f}')
+        # ax.text(0.05, 0.95, stats_str, transform=ax.transAxes,
+        #        fontsize=7, verticalalignment='top',
+        #        bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
     
     # Hide unused subplot if only 3 algorithms
     if len(algorithms) < 4:
@@ -1060,7 +1050,7 @@ def plot_comprehensive_comparison(all_stats, sa_results, ga_results, hybrid_resu
 # =============================================================================
 # VISUALIZATION LAUNCHERS
 # =============================================================================
-def visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict):
+def visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict, algorithm_name="Unknown"):
     """Run matplotlib-based visualization."""
     print("\n" + "="*70)
     print("STARTING MATPLOTLIB VISUALIZATION (SMOOTH)")
@@ -1069,7 +1059,7 @@ def visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict):
     try:
         final_speeds_dict = {v.id: s for v, s in zip(perm_best, speeds_best)}
         
-        animator = IntersectionVisualization()
+        animator = IntersectionVisualization(algorithm_name=algorithm_name)
         animator.load_schedule(perm_best, final_speeds_dict)
         
         print("Opening animation window...")
@@ -1268,7 +1258,7 @@ def main():
         
         print("  (Close all plot windows to continue to animation)")
         if animation_enabled:
-            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict, algorithm_name="SA")
         elif web_viz_enabled:
             visualize_web(perm_best, speeds_best)
 
@@ -1289,7 +1279,7 @@ def main():
         
         print("  (Close all plot windows to continue to animation)")
         if animation_enabled:
-            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict, algorithm_name="GA")
         elif web_viz_enabled:
             visualize_web(perm_best, speeds_best)
 
@@ -1311,7 +1301,7 @@ def main():
         
         print("  (Close all plot windows to continue to animation)")
         if animation_enabled:
-            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict, algorithm_name="ACO")
         elif web_viz_enabled:
             visualize_web(perm_best, speeds_best)
 
@@ -1333,7 +1323,7 @@ def main():
         
         print("  (Close all plot windows to continue to animation)")
         if animation_enabled:
-            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict, algorithm_name="PSO")
         elif web_viz_enabled:
             visualize_web(perm_best, speeds_best)
 
@@ -1355,7 +1345,7 @@ def main():
         
         print("  (Close all plot windows to continue to animation)")
         if animation_enabled:
-            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict, algorithm_name="HYBRID (ACO+PSO)")
         elif web_viz_enabled:
             visualize_web(perm_best, speeds_best)
 
@@ -1392,7 +1382,7 @@ def main():
         
         print("  (Close all plot windows to continue to animation)")
         if animation_enabled:
-            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict)
+            visualize_matplotlib(perm_best, speeds_best, geom, tau_p_dict, algorithm_name="DA (Dragonfly)")
         elif web_viz_enabled:
             visualize_web(perm_best, speeds_best)
 
