@@ -278,6 +278,15 @@ class VehicleAnimator:
         self.valid = True
         self.set_position(0.0) # Set to initial position
 
+    # --- NEW: helper to report status at absolute time t ---
+    def status_at_time(self, t: float) -> str:
+        """Return 'in_queue'|'crossing'|'finished' for given animation time t."""
+        if t < self.start_time_anim - 1e-6:
+            return "in_queue"
+        if t > self.end_time_anim + 1e-6:
+            return "finished"
+        return "crossing"
+
     # --- MODIFICATION: No longer need build_key_frames ---
 
     # --- MODIFICATION: New get_distance_at_time logic ---
@@ -335,17 +344,31 @@ class IntersectionVisualization:
     }
     EMERGENCY_COLOR = 'red'
 
-    def __init__(self):
-        self.fig, self.ax = plt.subplots(figsize=(12, 12))
+    def __init__(self, algorithm_name="Unknown"):
+        self.algorithm_name = algorithm_name
+        self.fig = plt.figure(figsize=(18, 10))
+        # Create grid: left panel (dashboard) + right area (intersection)
+        gs = self.fig.add_gridspec(1, 2, width_ratios=[1, 2.5], wspace=0.02)
+        
+        # Main intersection axes (right side)
+        self.ax = self.fig.add_subplot(gs[0, 1])
         self.ax.set_xlim(MIN_X, MAX_X)
         self.ax.set_ylim(MIN_Y, MAX_Y)
         self.ax.set_aspect('equal')
-        self.ax.set_facecolor('#202020')
-        # --- MODIFICATION: Title changed to reflect new logic ---
-        self.ax.set_title("Intersection Animation - Best Solution (Smooth Viz)", color='white', y=1.02, fontsize=16)
+        self.ax.set_facecolor('#1a1a1a')
+        self.ax.set_title("Intersection Traffic Optimization - Live Simulation", 
+                         color='white', fontsize=16, fontweight='bold', pad=15)
+        
         self.vehicle_animators: Dict[int, VehicleAnimator] = {}
+        self.vehicle_status: Dict[int, Dict] = {}   # Track info per vehicle
+        self.info_ax = None                          # Dashboard panel axis
+        self.info_block = None                       # Text object for the panel
         self.ani = None
-        self.time_text = self.ax.text(0.02, 0.97, '', color='white', transform=self.ax.transAxes, fontsize=14)
+        self.time_text = self.ax.text(0.02, 0.97, '', color='#ffffff', 
+                                      transform=self.ax.transAxes, fontsize=12, 
+                                      fontweight='bold',
+                                      bbox=dict(boxstyle='round,pad=0.5', 
+                                              facecolor='#2a2a2a', alpha=0.8))
         self.t_max = 0.0
         
         try:
@@ -355,6 +378,42 @@ class IntersectionVisualization:
             self.geom_for_drawing = None
         
         self.setup_intersection_layout()
+        self.setup_info_panel()   # Create the dashboard panel
+
+    # --- Dashboard Panel (Left Side) ---
+    def setup_info_panel(self):
+        """Sets up the left-side dashboard for comprehensive vehicle status and statistics."""
+        try:
+            # Remove existing info_ax if present
+            if self.info_ax is not None:
+                try:
+                    self.info_ax.remove()
+                except Exception:
+                    pass
+
+            # Dashboard panel on left side using GridSpec
+            self.info_ax = self.fig.add_subplot(self.fig.axes[0].get_gridspec()[0, 0])
+            self.info_ax.set_xlim(0, 1)
+            self.info_ax.set_ylim(0, 1)
+            self.info_ax.set_facecolor('#0d1117')
+            self.info_ax.axis('off')
+            
+            # Add subtle border
+            self.info_ax.add_patch(plt.Rectangle((0.01, 0.01), 0.98, 0.98, 
+                                                  fill=False, 
+                                                  edgecolor='#30363d', 
+                                                  linewidth=1.5, 
+                                                  transform=self.info_ax.transAxes))
+            
+            # Initial header
+            header = "═══════════════════════════════\n    TRAFFIC CONTROL DASHBOARD\n═══════════════════════════════"
+            self.info_block = self.info_ax.text(0.05, 0.97, header, va='top', ha='left',
+                                                fontsize=9, color='#c9d1d9', 
+                                                fontfamily='monospace', fontweight='bold')
+        except Exception as e:
+            print(f"Warning: could not create dashboard panel: {e}")
+            self.info_ax = None
+            self.info_block = None
 
     def setup_intersection_layout(self):
         """
@@ -420,21 +479,6 @@ class IntersectionVisualization:
         self.ax.arrow(50, -35, 0, 10, **arrow_props) 
         self.ax.text(-30, 10, "WEST (In)", rotation=90, **text_props)
         self.ax.arrow(-35, 10, 10, 0, **arrow_props)
-
-        color_legend_patches = [
-             Patch(color=self.EMERGENCY_COLOR, label='Emergency (RED)'),
-             Patch(color=self.APPROACH_COLORS['N'], label='N Approach (BLUE)'),
-             Patch(color=self.APPROACH_COLORS['E'], label='E Approach (YELLOW)'),
-             Patch(color=self.APPROACH_COLORS['S'], label='S Approach (GREEN)'),
-             Patch(color=self.APPROACH_COLORS['W'], label='W Approach (PINK)')
-        ]
-        path_legend_patches = [
-             Patch(color='#00FFFF', label='Straight Path'),
-             Patch(color='#FF00FF', label='Left Turn Path'),
-             Patch(color='#00FF00', label='Right Turn Path')
-        ]
-        all_legend_handles = path_legend_patches + color_legend_patches
-        self.ax.legend(handles=all_legend_handles, loc='lower right', fontsize='small', ncol=2)
         
         self.ax.axis('off')
 
@@ -470,6 +514,21 @@ class IntersectionVisualization:
         vehicles_loaded = 0
         self.t_max = 0.0 # Reset max time
 
+        # NEW: initialize vehicle_status dictionary from best_perm
+        self.vehicle_status.clear()
+        for vehicle in best_perm:
+            self.vehicle_status[vehicle.id] = {
+                "id": vehicle.id,
+                "approach": getattr(vehicle, "approach", "?"),
+                "maneuver": getattr(vehicle, "maneuver", getattr(vehicle, "path", ["?"])[0]) if hasattr(vehicle, "maneuver") else "?",
+                "speed": speeds_dict.get(vehicle.id, None),
+                "is_emergency": getattr(vehicle, "priority_status", False),
+                "status": "in_queue",
+                "delay": 0.0,  # Will be updated during animation
+                "start_time": 0.0,
+                "end_time": 0.0
+            }
+
         for vehicle in best_perm:
             if vehicle.priority_status:
                 v_color = self.EMERGENCY_COLOR
@@ -491,6 +550,10 @@ class IntersectionVisualization:
                     vehicles_loaded += 1
                     # Update total animation time
                     self.t_max = max(self.t_max, animator.end_time_anim)
+                    # Store timing info for delay calculation
+                    if vehicle.id in self.vehicle_status:
+                        self.vehicle_status[vehicle.id]["start_time"] = animator.start_time_anim
+                        self.vehicle_status[vehicle.id]["end_time"] = animator.end_time_anim
                 else:
                     print(f"Debug: Failed to initialize animator for V {vehicle.id}.")
             else:
@@ -498,6 +561,11 @@ class IntersectionVisualization:
 
         if self.t_max <= 1e-6 and self.vehicle_animators:
             self.t_max = 10.0 # Fallback duration
+
+        # Ensure info panel exists and show initial snapshot
+        if self.info_ax is None or self.info_block is None:
+            self.setup_info_panel()
+        self.update_info_panel(0.0)   # show initial statuses
 
         print(f"Smooth animation loaded: {vehicles_loaded} vehicles. Total Duration: {self.t_max:.2f}s.")
 
@@ -510,6 +578,8 @@ class IntersectionVisualization:
             v_anim = self.vehicle_animators[v_id]
             v_anim.set_position(0.0)
             patches.append(v_anim.patch); patches.append(v_anim.text)
+        # update info panel snapshot at t=0
+        self.update_info_panel(0.0)
         return patches
 
     def update(self, t):
@@ -531,32 +601,224 @@ class IntersectionVisualization:
                     v_anim.text.remove()
                 except Exception:
                     pass
+                # Mark status finished but keep in vehicle_status for panel
+                if v_id in self.vehicle_status:
+                    self.vehicle_status[v_id]['status'] = "finished"
                 del self.vehicle_animators[v_id]
                 continue
 
             v_anim.set_position(t)
             patches.append(v_anim.patch); patches.append(v_anim.text)
+
+            # update vehicle_status live fields
+            if v_id in self.vehicle_status:
+                self.vehicle_status[v_id]['status'] = v_anim.status_at_time(t)
+                self.vehicle_status[v_id]['speed'] = getattr(v_anim, "speed", self.vehicle_status[v_id]['speed'])
+                # Calculate delay: time spent waiting before crossing
+                if t >= v_anim.start_time_anim:
+                    self.vehicle_status[v_id]['delay'] = max(0.0, v_anim.start_time_anim)
+
+        # UPDATE the info panel after all vehicles updated
+        self.update_info_panel(t)
+
         return patches
 
-    def start_animation(self):
-        """Starts the matplotlib animation."""
-        if not self.vehicle_animators or self.t_max <= 0:
-            print("Cannot start animation: No valid vehicles/schedule or zero duration.")
+    # --- Update Dashboard with Rich Formatting ---
+    def update_info_panel(self, current_time: float):
+        """Refresh the dashboard with 2x2 grid layout showing each approach."""
+        if self.info_block is None or not self.vehicle_status:
             return
 
-        fps = 30
-        total_frames = int(self.t_max * fps) + 1
-        print(f"Starting animation: {total_frames} frames at {fps} FPS.")
+        # Clear previous colored text objects
+        if hasattr(self, '_colored_texts'):
+            for txt in self._colored_texts:
+                try:
+                    txt.remove()
+                except:
+                    pass
+        self._colored_texts = []
 
+        # Header
+        y_pos = 0.98
+        header = f"══════════════════════════════════\n TRAFFIC CONTROL DASHBOARD\n Algorithm: {self.algorithm_name}\n══════════════════════════════════"
+        self.info_block.set_text(header)
+        self.info_block.set_position((0.02, y_pos))
+        y_pos -= 0.09
+        
+        # Legend Section (compact)
+        legend_txt = self.info_ax.text(0.02, y_pos, 
+                                       "Legend: Red★=Emerg | S/L/R=Man. | W/X/D=Status",
+                                       va='top', ha='left', fontsize=6, 
+                                       color='#6e7681', fontfamily='monospace')
+        self._colored_texts.append(legend_txt)
+        y_pos -= 0.028
+        
+        # Summary Statistics Section
+        total = len(self.vehicle_status)
+        in_queue = sum(1 for v in self.vehicle_status.values() if v.get('status') == 'in_queue')
+        crossing = sum(1 for v in self.vehicle_status.values() if v.get('status') == 'crossing')
+        finished = sum(1 for v in self.vehicle_status.values() if v.get('status') == 'finished')
+        emergency_count = sum(1 for v in self.vehicle_status.values() if v.get('is_emergency'))
+        total_delay = sum(v.get('delay', 0.0) for v in self.vehicle_status.values())
+        
+        progress_pct = min(100, (current_time / self.t_max * 100)) if self.t_max > 0 else 0
+        
+        stats_text = f"Time: {current_time:>4.1f}s/{self.t_max:.1f}s {('█'*int(progress_pct/5))+('░'*(20-int(progress_pct/5)))} {progress_pct:.0f}%\nVeh:{total} Wait:{in_queue} Cross:{crossing} Done:{finished} Em:{emergency_count}\nTotal Delay: {total_delay:.1f}s"
+        
+        txt = self.info_ax.text(0.02, y_pos, stats_text, va='top', ha='left',
+                               fontsize=6.5, color='#8b949e', fontfamily='monospace', linespacing=1.5)
+        self._colored_texts.append(txt)
+        y_pos -= 0.075
+        
+        # Organize vehicles by approach
+        approaches = {'N': [], 'E': [], 'S': [], 'W': []}
+        for vid, info in self.vehicle_status.items():
+            # Update dynamic fields
+            animator = self.vehicle_animators.get(vid)
+            if animator:
+                info['speed'] = getattr(animator, "speed", info.get('speed'))
+                info['status'] = animator.status_at_time(current_time)
+                if current_time >= animator.start_time_anim:
+                    info['delay'] = max(0.0, animator.start_time_anim)
+            else:
+                if info.get('status') != "finished" and current_time > self.t_max + 0.5:
+                    info['status'] = "finished"
+            
+            app = info.get('approach', '?')
+            if app in approaches:
+                approaches[app].append((vid, info))
+        
+        # Sort each approach by vehicle ID
+        for app in approaches:
+            approaches[app].sort(key=lambda x: x[0])
+        
+        # 2x2 Grid Layout
+        approach_labels = {'N': 'NORTH', 'E': 'EAST', 'S': 'SOUTH', 'W': 'WEST'}
+        approach_colors_label = {'N': '#3399FF', 'E': '#FFCC33', 'S': '#33FF66', 'W': '#FF66B2'}
+        
+        # Grid positions: (x_offset, y_offset) for each quadrant
+        grid_layout = {
+            'N': (0.02, 0.0),     # Top-left
+            'E': (0.52, 0.0),     # Top-right
+            'S': (0.02, -0.42),   # Bottom-left
+            'W': (0.52, -0.42)    # Bottom-right
+        }
+        
+        for app in ['N', 'E', 'S', 'W']:
+            x_base, y_offset = grid_layout[app]
+            y_start = y_pos + y_offset
+            
+            # Approach header
+            header_txt = self.info_ax.text(x_base, y_start, f"┌─ {approach_labels[app]} ─┐",
+                                          va='top', ha='left', fontsize=8,
+                                          color=approach_colors_label[app],
+                                          fontfamily='monospace', fontweight='bold')
+            self._colored_texts.append(header_txt)
+            
+            # Column headers
+            col_header_txt = self.info_ax.text(x_base, y_start - 0.03, "ID Man Status",
+                                              va='top', ha='left', fontsize=6.5,
+                                              color='#6e7681', fontfamily='monospace')
+            self._colored_texts.append(col_header_txt)
+            
+            # Render vehicles for this approach
+            y_vehicle = y_start - 0.055
+            for vid, info in approaches[app]:
+                # ID color: red if emergency, white otherwise
+                if info.get('is_emergency'):
+                    id_color = '#ff4444'  # Red
+                    id_str = f"{vid:>2}★"
+                else:
+                    id_color = '#c9d1d9'  # White
+                    id_str = f"{vid:>2} "
+                
+                # Maneuver - single letter
+                maneuver_raw = info.get('maneuver', '?')
+                if isinstance(maneuver_raw, str) and len(maneuver_raw) > 0:
+                    maneuver = maneuver_raw[0]  # Just S, L, or R
+                else:
+                    maneuver = '?'
+                
+                # Status with compact text
+                st = info.get('status', 'UNK')
+                
+                # Calculate progress for this vehicle (0-100%)
+                animator = self.vehicle_animators.get(vid)
+                if animator and st == 'crossing':
+                    # Vehicle is crossing - show progress
+                    elapsed = current_time - animator.start_time_anim
+                    progress = min(100, (elapsed / animator.duration * 100)) if animator.duration > 0 else 0
+                    # Mini progress bar (3 blocks for space)
+                    filled = int(progress / 33.33)  # 0-3
+                    bar = ('█' * filled) + ('░' * (3 - filled))
+                    status_text = f"X {bar}"  # X = crossing
+                    status_color = '#58a6ff'  # Blue
+                elif st == 'finished':
+                    status_text = 'D ███'  # D = done
+                    status_color = '#3fb950'  # Green
+                else:  # in_queue
+                    status_text = 'W ░░░'  # W = waiting
+                    status_color = '#ff4444'  # Red
+                
+                # Vehicle ID
+                id_txt = self.info_ax.text(x_base, y_vehicle, id_str, va='top', ha='left',
+                                          fontsize=7, color=id_color,
+                                          fontfamily='monospace', fontweight='bold')
+                self._colored_texts.append(id_txt)
+                
+                # Maneuver
+                maneuver_txt = self.info_ax.text(x_base + 0.055, y_vehicle, maneuver,
+                                                va='top', ha='left', fontsize=7,
+                                                color='#8b949e', fontfamily='monospace')
+                self._colored_texts.append(maneuver_txt)
+                
+                # Status with progress
+                status_txt = self.info_ax.text(x_base + 0.095, y_vehicle, status_text,
+                                              va='top', ha='left', fontsize=7,
+                                              color=status_color, fontfamily='monospace',
+                                              fontweight='bold')
+                self._colored_texts.append(status_txt)
+                
+                y_vehicle -= 0.025
+                
+                # Stop if quadrant is full
+                if y_vehicle < (y_start - 0.40):
+                    break
+
+    def start_animation(self, interval=50, repeat=True):
+        """
+        Start the matplotlib animation.
+        
+        Parameters:
+        -----------
+        interval : int
+            Delay between frames in milliseconds (default: 50ms = 20 fps)
+        repeat : bool
+            Whether to loop the animation (default: True)
+        """
+        if not self.vehicle_animators:
+            print("Error: No vehicles to animate. Load a schedule first.")
+            return
+        
+        # Calculate number of frames based on duration and interval
+        fps = 1000.0 / interval  # frames per second
+        total_frames = int(self.t_max * fps) + 10  # Add buffer frames
+        
+        print(f"Starting animation: {total_frames} frames @ {fps:.1f} fps")
+        print(f"Animation duration: {self.t_max:.2f} seconds")
+        
+        # Create time array for the animation
+        time_array = np.linspace(0, self.t_max, total_frames)
+        
+        # Create animation
         self.ani = animation.FuncAnimation(
-            self.fig, self.update,
-            frames=np.linspace(0, self.t_max, total_frames),
+            self.fig,
+            self.update,
+            frames=time_array,
             init_func=self.init_anim,
-            blit=False,
-            interval=max(1, int(1000/fps)),
-            repeat=False
+            interval=interval,
+            repeat=repeat,
+            blit=False  # Set to False for better compatibility with info panel
         )
-        try:
-            plt.show() # Blocks until window closed
-        except Exception as e:
-            print(f"Error displaying animation window: {e}")
+        
+        plt.show()
