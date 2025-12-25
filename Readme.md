@@ -3,7 +3,7 @@
 
 **Course:** Optimization Techniques (MCTR1021) (Winter 2025)
 **Institution:** German University in Cairo (GUC)  
-**Last Updated:** January 2025
+**Last Updated:** Decemeber 2025
 
 ---
 
